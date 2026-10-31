@@ -46,6 +46,7 @@ export async function GET(req: Request) {
     .filter(([r, s]) => ID.test(r ?? '') && stationIds.has(s))
     .slice(0, MAX_PAIRS);
   const from = point(p.get('from')), to = point(p.get('to'));
+  console.log('plan-debug', p.get('q')); // 임시: '도착 정보 없음' 원인 확인용, 확인 후 지움
   const direct = from && to ? directCandidates(from, to, stations, routes) : [];
 
   // 노선은 ODsay 후보 먼저, 그다음 직행 후보, 합쳐서 최대 10개
