@@ -100,6 +100,7 @@ export default function Home() {
   const [msg, setMsg] = useState('');
   const [sel, setSel] = useState(0);
 
+  const odsayErr = useRef('');
   const odsayRef = useRef<Route[] | null>(null); // 출발·도착이 같으면 ODsay 경로는 다시 부르지 않는다 (일일 한도)
 
   // 출발·도착이 바뀌면 ODsay로 경로 후보를 받고, 30초마다 실시간·시간표만 다시 계산한다.
@@ -117,7 +118,8 @@ export default function Home() {
           SX: String(from.lng), SY: String(from.lat), EX: String(to.lng), EY: String(to.lat), SearchPathType: '2', apiKey: ODSAY_KEY,
         })}`).then((r) => r.json());
         const parsed = parseOdsay(body);
-        if (!parsed.ok && parsed.reason !== '경로 없음') return setMsg(parsed.reason);
+        // ODsay가 실패해도(일일 한도 초과 등) 우리 데이터의 직행 노선은 보여준다
+        odsayErr.current = !parsed.ok && parsed.reason !== '경로 없음' ? (/429|quota/i.test(parsed.reason) ? '오늘 경로 검색 한도를 다 써서 갈아타지 않는 버스만 보여요.' : parsed.reason) : '';
         // 실시간 버스 위치로 대기를 채우고, 서버가 찾은 직행 후보를 더한다. ODsay가 경로를 못 찾아도 직행 후보는 본다.
         odsayRef.current = parsed.ok ? [...parsed.routes].sort((a, b) => a.odsayMin - b.odsayMin) : [];
       }
@@ -137,7 +139,7 @@ export default function Home() {
       // ODsay 경로보다 이동만 1.5배 넘게 걸리는 직행 후보는 뺀다 (정류장 수 × 평균 소요라 긴 노선은 부정확)
       const bestOdsay = odsay[0]?.odsayMin ?? Infinity;
       const byTime = [...odsay, ...directToRoutes(direct, odsay).filter((r) => r.odsayMin <= bestOdsay * 1.5)];
-      if (!byTime.length) return setMsg('버스로 가는 경로가 없어요. 걸어가기 가까운 거리일 수 있어요.');
+      if (!byTime.length) return setMsg(odsayErr.current || '버스로 가는 경로가 없어요. 걸어가기 가까운 거리일 수 있어요.');
       // 대기를 알 수 있는 후보가 먼저, 그 안에서 도착이 빠른 순. 모르면 이동 시간 순으로 맨 뒤.
       const ranked = byTime
         .map((r) => applyRealtime(r, results, headways, sched))
@@ -146,7 +148,7 @@ export default function Home() {
       setRoutes(ranked.slice(0, 3));
       if (!refresh) setSel(0);
       setAt(new Date());
-      setMsg('');
+      setMsg(odsayErr.current);
     } catch {
       if (!refresh) setMsg('경로 API에 연결하지 못했어요. 잠시 뒤 다시 시도해 주세요.');
     }

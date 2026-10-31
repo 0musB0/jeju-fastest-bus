@@ -48,7 +48,6 @@ function loadLanes(mapObj: string, n: number): Promise<Pt[][] | null> {
       const lanes = (b.result?.lane ?? []).map((l) => (l.section ?? []).flatMap((s) => (s.graphPos ?? []).map((g) => ({ lat: Number(g.y), lng: Number(g.x) }))));
       return lanes.length === n && lanes.every((l) => l.length > 1) ? lanes : null; // 버스 구간 수와 안 맞으면 쓰지 않음
     }).catch(() => null);
-    p.then((v) => v || laneCache.delete(mapObj)); // 실패는 캐시하지 않음
     laneCache.set(mapObj, p);
   }
   return laneCache.get(mapObj)!;
