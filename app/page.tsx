@@ -97,29 +97,37 @@ export default function Home() {
   const [to, setTo] = useState<Place | null>(null);
   const [routes, setRoutes] = useState<Ranked[]>([]);
   const [at, setAt] = useState<Date | null>(null);
-  const [stale, setStale] = useState(false);
   const [msg, setMsg] = useState('');
   const [sel, setSel] = useState(0);
 
-  async function plan() {
+  const odsayRef = useRef<Route[] | null>(null); // 출발·도착이 같으면 ODsay 경로는 다시 부르지 않는다 (일일 한도)
+
+  // 출발·도착이 바뀌면 ODsay로 경로 후보를 받고, 30초마다 실시간·시간표만 다시 계산한다.
+  async function plan(refresh = false) {
     if (!from || !to) return;
-    setMsg('경로 계산 중...');
-    setRoutes([]);
+    if (!refresh) {
+      odsayRef.current = null;
+      setMsg('경로 계산 중...');
+      setRoutes([]);
+    }
     try {
       // ODsay는 Web 키로 브라우저에서 직접 호출한다 (서버 호출 금지). SearchPathType=2: 버스만.
-      const body = await fetch(`https://api.odsay.com/v1/api/searchPubTransPathT?${new URLSearchParams({
-        SX: String(from.lng), SY: String(from.lat), EX: String(to.lng), EY: String(to.lat), SearchPathType: '2', apiKey: ODSAY_KEY,
-      })}`).then((r) => r.json());
-      const parsed = parseOdsay(body);
-      if (!parsed.ok && parsed.reason !== '경로 없음') return setMsg(parsed.reason);
-      // 실시간 버스 위치로 대기를 채우고, 서버가 찾은 직행 후보를 더한다. ODsay가 경로를 못 찾아도 직행 후보는 본다.
-      const odsay = parsed.ok ? [...parsed.routes].sort((a, b) => a.odsayMin - b.odsayMin) : [];
+      if (!odsayRef.current) {
+        const body = await fetch(`https://api.odsay.com/v1/api/searchPubTransPathT?${new URLSearchParams({
+          SX: String(from.lng), SY: String(from.lat), EX: String(to.lng), EY: String(to.lat), SearchPathType: '2', apiKey: ODSAY_KEY,
+        })}`).then((r) => r.json());
+        const parsed = parseOdsay(body);
+        if (!parsed.ok && parsed.reason !== '경로 없음') return setMsg(parsed.reason);
+        // 실시간 버스 위치로 대기를 채우고, 서버가 찾은 직행 후보를 더한다. ODsay가 경로를 못 찾아도 직행 후보는 본다.
+        odsayRef.current = parsed.ok ? [...parsed.routes].sort((a, b) => a.odsayMin - b.odsayMin) : [];
+      }
+      const odsay = odsayRef.current;
       let results: PlanResults = {};
       let headways: Headways = {};
       let sched: Schedules = {};
       let direct: Direct[] = [];
       try {
-        const q = new URLSearchParams({ q: realtimeKeys(odsay).join(','), from: `${from.lat},${from.lng}`, to: `${to.lat},${to.lng}` });
+        const q = new URLSearchParams({ q: realtimeKeys(odsay, 30).join(','), from: `${from.lat},${from.lng}`, to: `${to.lat},${to.lng}` });
         const r = await fetch(`/api/plan?${q}`).then((r) => r.json());
         results = r.results ?? {};
         headways = r.headways ?? {};
@@ -136,21 +144,21 @@ export default function Home() {
         .map((r) => ({ ...r, eta: arrivalMin(r.candidate) }))
         .sort((a, b) => (a.eta ? 0 : 1) - (b.eta ? 0 : 1) || (a.eta?.min ?? a.odsayMin) - (b.eta?.min ?? b.odsayMin));
       setRoutes(ranked.slice(0, 3));
-      setSel(0);
+      if (!refresh) setSel(0);
       setAt(new Date());
-      setStale(false);
       setMsg('');
     } catch {
-      setMsg('경로 API에 연결하지 못했어요. 잠시 뒤 다시 시도해 주세요.');
+      if (!refresh) setMsg('경로 API에 연결하지 못했어요. 잠시 뒤 다시 시도해 주세요.');
     }
   }
 
   useEffect(() => { plan(); }, [from, to]); // eslint-disable-line react-hooks/exhaustive-deps
+  // 자동 갱신: 결과가 있고 화면을 보고 있을 때만 30초마다 (서버의 실시간 캐시가 20초)
   useEffect(() => {
     if (!at) return;
-    const id = setTimeout(() => setStale(true), 60_000);
+    const id = setTimeout(() => document.visibilityState === 'visible' && plan(true), 30_000);
     return () => clearTimeout(id);
-  }, [at]);
+  }, [at]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <main>
@@ -170,7 +178,7 @@ export default function Home() {
       {at && routes.length > 0 && (
         <div className="meta">
           <span><span className="num">{kstClock(at)}</span> 기준 · 도착이 빠른 순</span>
-          {stale && <button className="primary" onClick={plan}>다시 계산</button>}
+          <span className="muted">30초마다 자동 갱신</span>
         </div>
       )}
       {from && to && routes[sel] && <RouteMap from={from} to={to} rides={routes[sel].rides} mapObj={routes[sel].mapObj} />}

@@ -14,7 +14,8 @@ const stationIds = new Set(stations.map((s) => s.id));
 const routeById = new Map(routes.map((r) => [r.id, r]));
 const timetable = timetableData as Timetable;
 const ID = /^\d{9}$/;
-const MAX_ROUTES = 10;
+const MAX_ROUTES = 10; // 실시간 조회 노선 수
+const MAX_PAIRS = 60; // 시간표는 로컬 데이터라 더 많이 본다
 const CONCURRENCY = 2;
 
 const point = (v: string | null) => {
@@ -42,7 +43,8 @@ export async function GET(req: Request) {
   const pairs = (p.get('q') ?? '')
     .split(',')
     .map((x) => x.split(':'))
-    .filter(([r, s]) => ID.test(r ?? '') && stationIds.has(s));
+    .filter(([r, s]) => ID.test(r ?? '') && stationIds.has(s))
+    .slice(0, MAX_PAIRS);
   const from = point(p.get('from')), to = point(p.get('to'));
   const direct = from && to ? directCandidates(from, to, stations, routes) : [];
 
@@ -69,7 +71,7 @@ export async function GET(req: Request) {
   // 시간표 (KST 기준): 앞으로 3시간 안에 오는 버스, 없으면 첫차 시각
   const now = kstMinutes(new Date());
   const scheduled: Record<string, number[]> = {}, firstBus: Record<string, number> = {};
-  for (const [r, s] of allPairs) {
+  for (const [r, s] of [...pairs, ...direct.map((d) => [d.routeId, d.fromId])]) {
     const e = timetable[r], ord = routeById.get(r)?.stops.indexOf(s) ?? -1;
     if (!e || ord < 0) continue;
     const a = arrivals(e, ord, now);
