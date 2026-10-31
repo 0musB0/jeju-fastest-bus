@@ -14,15 +14,19 @@ const picked = PREFIXES.map((p) => routes.find((r) => r.no === p || r.no.startsW
 console.log('추적 노선:', picked.map((r) => r.no).join(', '));
 
 const field = (xml, n) => xml.match(new RegExp(`<${n}>([^<]*)</${n}>`))?.[1];
+const reasons = {}; // 실패 이유 → 횟수
+const fail = (why) => ((reasons[why] = (reasons[why] ?? 0) + 1), null);
 async function positions(routeId) {
   try {
-    const xml = await (await fetch(`http://busopen.jeju.go.kr/OpenAPI/service/bis/BusLocation?route=${routeId}`, { signal: AbortSignal.timeout(10000) })).text();
-    if (field(xml, 'resultCode') !== '00') return null;
+    const res = await fetch(`http://busopen.jeju.go.kr/OpenAPI/service/bis/BusLocation?route=${routeId}`, { signal: AbortSignal.timeout(10000) });
+    const xml = await res.text();
+    const code = field(xml, 'resultCode');
+    if (code !== '00') return fail(`HTTP ${res.status}, resultCode ${code ?? '없음'}: ${xml.slice(0, 120).replace(/\s+/g, ' ')}`);
     return [...xml.matchAll(/<item>([\s\S]*?)<\/item>/g)]
       .map(([, it]) => ({ plate: field(it, 'plateNo'), ord: Number(field(it, 'stationOrd')) }))
       .filter((b) => b.plate && b.plate !== 'null');
-  } catch {
-    return null;
+  } catch (e) {
+    return fail(`${e.name}: ${e.message}`);
   }
 }
 
@@ -85,7 +89,7 @@ const report = `## 정확도 확인 (${MINUTES}분 추적, ${POLL_S}초 간격)
 | --- | --- | --- | --- |
 ${lines.join('\n')}
 
-- 조회 실패: ${failures}/${polls}
+- 조회 실패: ${failures}/${polls}${Object.entries(reasons).map(([k, v]) => `\n  - ${v}회: ${k}`).join('')}
 - 비교 ${errors.length}건, 현재 값(정류장당 ${MIN_PER_STOP}분) 기준 평균 오차 **${mae.toFixed(1)}분**, 치우침 ${bias >= 0 ? '+' : ''}${bias.toFixed(1)}분 (+는 늦게 온다고 예측)
 - 오차 2분 이내 ${within(2)}%, 5분 이내 ${within(5)}%
 - 실측 정류장당 소요: **${perStop.toFixed(2)}분**
