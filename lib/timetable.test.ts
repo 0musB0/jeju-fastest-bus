@@ -14,6 +14,9 @@ test('표의 정류장 이름 ↔ BIS 정류장 이름', () => {
   assert.ok(!sameStop('제주터미널(노형로방향)', '제주버스터미널(동광로 방향)'));
   assert.ok(sameStop('공항(제주국제공항3(용담,시청))', '제주국제공항3(용담,시청)'));
   assert.ok(sameStop('동문로타리', '동문로터리'));
+  assert.ok(sameStop('하귀초교', '하귀초등학교'));
+  assert.ok(sameStop('신사동종점', '신사동'));
+  assert.ok(sameStop('조천리사무소', '조천환승정류장(조천리사무소)'));
   assert.ok(!sameStop('봉개동', '명도암 마을회관'));
 });
 

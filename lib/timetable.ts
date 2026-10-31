@@ -13,7 +13,8 @@ export function parseTime(cell: string): number | null {
 }
 
 const norm = (s: string) =>
-  s.replace(/<[^>]*>/g, '').replace(/[\s·.]/g, '').replace(/방향|방면/g, '').replace('로타리', '로터리').replace(/^제주터미널/, '제주버스터미널');
+  s.replace(/<[^>]*>/g, '').replace(/[\s·.]/g, '').replace(/방향|방면/g, '').replace('로타리', '로터리').replace(/^(제주)?터미널/, '제주버스터미널')
+    .replace(/초교/g, '초등학교').replace(/종점$/, '');
 const split = (s: string) => {
   const m = s.match(/^([^(]*)\((.*)\)$/);
   return m ? [m[1], m[2]] : [s, ''];
@@ -26,6 +27,7 @@ export function sameStop(col: string, stop: string): boolean {
   if (c === s) return true;
   const [cCore, cHint] = split(c), [sCore, sHint] = split(s);
   if (cHint.includes('(') && norm(cHint) === s) return true; // "공항(제주국제공항3(용담,시청))"
+  if (!cHint && cCore.length >= 3 && sHint.includes(cCore)) return true; // "조천리사무소" ↔ "조천환승정류장(조천리사무소)"
   const short = cCore.length < sCore.length ? cCore : sCore;
   if (short.length < 2 || !(sCore.includes(cCore) || cCore.includes(sCore))) return false;
   return !cHint || !sHint || cHint.includes('(') || sHint.includes(cHint) || cHint.includes(sHint);
