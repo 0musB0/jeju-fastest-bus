@@ -1,5 +1,7 @@
 // 1단계 전용: 배포 환경(icn1)에서 실시간 후보 API가 응답하는지 확인한다. 2단계가 끝나면 지운다.
 // 키는 응답에 넣지 않는다. 응답 앞부분만 보여준다.
+import { parseBusLocation } from '@/lib/realtime';
+
 const TAGO = 'https://apis.data.go.kr/1613000';
 
 async function probe(name: string, url: string) {
@@ -24,7 +26,14 @@ export async function GET(req: Request) {
   const bis = p.get('bis');
   if (bis) {
     const paths = bis.split(',').filter((x) => /^[A-Za-z]+(\?[A-Za-z0-9=&]*)?$/.test(x)).slice(0, 10);
-    return Response.json(await Promise.all(paths.map((x) => probe(x, `http://busopen.jeju.go.kr/OpenAPI/service/bis/${x}`))));
+    // BusLocation은 버스가 있는 정류장과 정류장 수만 요약
+    return Response.json(await Promise.all(paths.map(async (x) => {
+      const r = await probe(x, `http://busopen.jeju.go.kr/OpenAPI/service/bis/${x}`);
+      if (!x.startsWith('BusLocation') || !('body' in r)) return r;
+      const res = await fetch(`http://busopen.jeju.go.kr/OpenAPI/service/bis/${x}`, { cache: 'no-store' });
+      const loc = parseBusLocation(await res.text());
+      return loc.ok ? { name: x, count: loc.stops.length, buses: loc.stops.filter((s) => s.bus), last: loc.stops.at(-1) } : loc;
+    })));
   }
 
   const results = await Promise.all([
