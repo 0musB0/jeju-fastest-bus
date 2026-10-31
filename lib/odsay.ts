@@ -11,10 +11,11 @@ export type Parsed = { ok: true; routes: Route[] } | { ok: false; reason: string
 type Sub = { trafficType: number; sectionTime?: number; distance?: number; startName?: string; endName?: string; stationCount?: number; startLocalStationID?: string; startX?: number; startY?: number; endX?: number; endY?: number; lane?: { busNo?: string; busLocalBlID?: string }[]; passStopList?: { stations?: { x?: string | number; y?: string | number }[] } };
 
 // 제주 버스 요금 (카드·일반, bus.jeju.go.kr 확인 2026-10-31): 간선·지선 1,150원, 급행(1xx)은 20km까지 2,000원 + 5km마다 200원, 최대 3,000원.
-// 모르는 요금 노선(리무진 6xx, 8xx 등)은 null.
+// 모르는 요금 노선(리무진 600, 8xx 등)은 null.
 export function legFare(busNo: string, distM: number): number | null {
   if (/^1\d\d(-|$)/.test(busNo)) return Math.min(3000, 2000 + Math.ceil(Math.max(0, distM - 20000) / 5000) * 200);
-  return /^[2-57]\d\d(-|$)/.test(busNo) ? 1150 : null;
+  if (/^600(-|$)/.test(busNo)) return null; // 공항리무진은 요금 체계가 다름
+  return /^[2-7]\d\d(-|$)/.test(busNo) ? 1150 : null;
 }
 // 환승은 내린 뒤 40분 안에 2번까지 무료(더 비싼 버스로 갈아타면 차액만) → 3대마다 가장 비싼 한 대 요금.
 // ODsay 요금은 구간 요금을 그냥 더한 값이라(301+101 = 4,150원) 직접 계산하고, 모르는 노선이 섞이면 ODsay 값을 쓴다.

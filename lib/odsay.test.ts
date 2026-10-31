@@ -29,6 +29,7 @@ test('요금: 환승 2번까지는 가장 비싼 버스 요금만 (301 + 급행 
   assert.equal(legFare('101', 27000), 2400);
   assert.equal(legFare('101', 60000), 3000);
   assert.equal(legFare('600', 10000), null);
+  assert.equal(legFare('655', 10000), 1150);
   assert.equal(routeFare([1150, 3000], 4150), 3000);
   assert.equal(routeFare([1150, 1150, 1150, 1150], 4600), 2300); // 4번째 버스는 다시 냄
   assert.equal(routeFare([1150, null], 6650), 6650);
