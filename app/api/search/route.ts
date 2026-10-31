@@ -12,7 +12,7 @@ export async function GET(req: Request) {
     const res = await fetch(url, { headers: { Authorization: `KakaoAK ${key}` }, signal: AbortSignal.timeout(3000) });
     const body = await res.json();
     if (!res.ok || !Array.isArray(body.documents)) {
-      return Response.json({ error: '장소 검색 API 실패', status: res.status }, { status: 502 });
+      return Response.json({ error: '장소 검색 API 실패', status: res.status, reason: body.message ?? body.errorType }, { status: 502 });
     }
     const places = body.documents.map((d: Record<string, string>) => ({
       name: d.place_name,
