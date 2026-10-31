@@ -214,10 +214,15 @@ export default function Home() {
               {r.rides.slice(1).map((x, j) => {
                 const prev = r.rides[j];
                 const off = splitStop(prev.to)[0], on = splitStop(x.from)[0];
+                const b = r.eta?.boards[j + 1];
                 return (
                   <li key={j}>
                     <b>{off}</b>에서 내려 <b className="bus">{busNumbers(x.busNos).join(' · ')}</b>번으로 환승
                     {on !== off && <span className="muted"> ({on}까지 걸어서)</span>}
+                    {b && <div className="muted transfer-eta">
+                      {b.how === 'interval' ? `약 ${Math.round(b.at)}분 뒤 탑승 (배차 간격 어림)` : `${Math.round(b.at)}분 뒤 도착 · ${kstClock(at!, b.at)} (시간표 기준)`}
+                      {b.how !== 'interval' && ` · 환승 여유 ${Math.round(b.at - b.atStop)}분`}
+                    </div>}
                   </li>
                 );
               })}

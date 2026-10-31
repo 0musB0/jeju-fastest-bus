@@ -12,8 +12,11 @@ export type Candidate = { legs: BusLeg[]; walkAfterMin: number };
 export type WaitSource = 'realtime' | 'timetable' | 'unknown';
 
 // 목적지 도착까지 지금부터 몇 분인지. 대기를 추정할 수 없으면 null (순위 맨 뒤).
-export function arrivalMin(c: Candidate): { min: number; source: WaitSource } | null {
+// boards: 구간마다 버스에 타는 시각(지금부터 분), 정류장에 닿는 시각, 그 값을 어떻게 얻었는지 (화면에 환승 버스 도착을 보여줌)
+export type Board = { at: number; atStop: number; how: 'realtime' | 'timetable' | 'interval' };
+export function arrivalMin(c: Candidate): { min: number; source: WaitSource; boards: Board[] } | null {
   let t = 0;
+  const boards: Board[] = [];
   let source: WaitSource = 'realtime';
   for (const [i, leg] of c.legs.entries()) {
     const atStop = t + leg.walkBeforeMin;
@@ -24,19 +27,22 @@ export function arrivalMin(c: Candidate): { min: number; source: WaitSource } | 
     const bus = buses.find(canBoard);
     const scheduled = leg.timetableMin?.find(canBoard);
     let board: number;
-    if (bus !== undefined) board = bus;
+    let how: Board['how'] = 'timetable';
+    if (bus !== undefined) (board = bus), (how = 'realtime');
     else if (scheduled !== undefined) {
       board = scheduled;
       if (i === 0) source = 'timetable';
     } else if (leg.intervalMin) {
       // 단순화: 시간표가 없는 노선은 배차 간격의 절반을 대기로 씀
       board = atStop + leg.intervalMin / 2;
+      how = 'interval';
       if (i === 0) source = 'timetable';
     } else return null;
     if (i > 0 && source === 'realtime') source = 'timetable';
+    boards.push({ at: board, atStop, how });
     t = board + leg.rideMin;
   }
-  return { min: t + c.walkAfterMin, source };
+  return { min: t + c.walkAfterMin, source, boards };
 }
 
 // "지금 + 분"을 KST 시:분으로. 서버(UTC)에서도 같은 값이 나온다.
