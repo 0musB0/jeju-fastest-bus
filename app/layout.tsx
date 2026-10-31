@@ -10,7 +10,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         {/* 제목·시각용 귀여운 글꼴(Jua, OFL 무료). text=로 쓰는 글자만 받아서 아주 작다 */}
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
-        <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Jua&display=swap&text=%ED%98%BC%EC%A0%80%20%ED%83%91%EC%84%9C0123456789%3A%EB%B6%84" />
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Jua&display=swap&text=%ED%98%BC%EC%A0%80%20%ED%83%91%EC%84%9C0123456789%3A%EB%B6%84APM%20" />
       </head>
       <body>
         {children}
