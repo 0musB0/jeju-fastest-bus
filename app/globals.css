@@ -22,7 +22,8 @@ body {
   font: 16px/1.6 'SF Pro Display', -apple-system, 'Apple SD Gothic Neo', 'Helvetica Neue', 'Pretendard', sans-serif;
 }
 h1 span { color: var(--accent); }
-h1 { font-family: var(--serif); font-weight: 600; font-size: 30px; line-height: 1.1; letter-spacing: -0.03em; margin: 0 0 6px; color: var(--ink); }
+h1 svg { flex: none; }
+h1 { display: flex; align-items: center; gap: 8px; font-family: 'Jua', var(--serif); font-weight: 400; font-size: 34px; line-height: 1.1; letter-spacing: -0.01em; margin: 0 0 6px; color: var(--ink); }
 .lead { color: var(--muted); font-size: 14px; margin: 0 0 24px; }
 button {
   font: inherit; font-size: 15px; border: 1px solid var(--line); background: var(--card); color: var(--text);

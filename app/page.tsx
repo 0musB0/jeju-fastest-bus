@@ -132,7 +132,15 @@ export default function Home() {
 
   return (
     <main>
-      <h1><span>제주</span> 가장 빠른 버스</h1>
+      <h1>
+        <svg width="34" height="34" viewBox="0 0 32 32" aria-hidden="true">
+          <circle cx="16" cy="18" r="12" fill="#f28a1e" />
+          <circle cx="12" cy="14" r="3" fill="#fff" opacity=".25" />
+          <path d="M16 7c0-2 1-3 2.5-3.5" stroke="#5a7d2a" strokeWidth="2" fill="none" strokeLinecap="round" />
+          <path d="M17 6c3-3 8-2 9 0-3 2-7 2-9 0z" fill="#6c9a2e" />
+        </svg>
+        <span>제주</span> 가장 빠른 버스
+      </h1>
       <p className="lead">가까운 정류장이 아니라, 목적지에 가장 먼저 닿는 버스를 찾아요.</p>
       <PlacePicker label="출발" value={from} onPick={setFrom} allowHere />
       <PlacePicker label="도착" value={to} onPick={setTo} />
