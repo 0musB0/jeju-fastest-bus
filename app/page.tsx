@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
 import { arrivalMin, kstClock } from '@/lib/eta';
+import { BOARD_MARGIN_MIN } from '@/lib/config';
 import { parseOdsay, type Route } from '@/lib/odsay';
 import { applyRealtime, directToRoutes, realtimeKeys, type Headways, type PlanResults } from '@/lib/realtime';
 import type { Direct } from '@/lib/direct';
@@ -11,7 +12,13 @@ type Ranked = Route & { eta: ReturnType<typeof arrivalMin> };
 const ODSAY_KEY = process.env.NEXT_PUBLIC_ODSAY_KEY ?? '';
 // 도착 칸 안내 문구: 제주말, 페이지를 열 때마다 바뀐다
 const ASKS = ['어디 감수꽈?', '어드레 가카마씸?', '오늘은 어드레 감서?'];
-const SOURCE_LABEL = { realtime: '실시간', timetable: '배차 간격 추정', unknown: '' } as const;
+// 버스 번호만: "300(신사동)", "365-21" → "300", "365" (같은 번호는 하나로)
+const busNumbers = (nos: string[]) => [...new Set(nos.map((n) => n.replace(/\(.*\)/, '').replace(/-\d+$/, '').trim()))];
+// "하귀환승정류장(하귀하나로마트)" → ["하귀환승정류장", "하귀하나로마트"]. 괄호는 길 건너 같은 이름 정류장을 가리는 힌트라 작게 남긴다.
+const splitStop = (name: string) => {
+  const m = name.match(/^(.*?)\s*\((.*)\)$/);
+  return m ? [m[1], m[2]] : [name, ''];
+};
 
 function PlacePicker({ label, value, onPick, allowHere }: { label: string; value: Place | null; onPick: (p: Place | null) => void; allowHere?: boolean }) {
   const [q, setQ] = useState('');
@@ -161,29 +168,31 @@ export default function Home() {
       )}
       {routes.map((r, i) => {
         const walk = r.candidate.legs.reduce((s, l) => s + l.walkBeforeMin, r.candidate.walkAfterMin);
-        const next = r.candidate.legs[0].nextBusesMin?.[0];
+        const leg = r.candidate.legs[0];
+        // 걸어가서 탈 수 있는 첫 버스
+        const next = leg.nextBusesMin?.find((b) => b >= leg.walkBeforeMin + BOARD_MARGIN_MIN) ?? leg.nextBusesMin?.[0];
+        const [stop, side] = splitStop(r.rides[0].from);
         return (
           <article key={i} className={`box result${i === 0 && r.eta ? ' best' : ''}`} style={{ '--i': i } as React.CSSProperties}>
-            {r.eta ? (
-              <div>
-                <span className="eta">{kstClock(at!, r.eta.min)}</span>
-                <span className="muted"> 도착 · {Math.round(r.eta.min)}분 뒤</span>
-                <span className={`badge${r.eta.source === 'realtime' ? ' live' : ''}`}>{SOURCE_LABEL[r.eta.source]}</span>
+            <div className="row" style={{ alignItems: 'flex-start' }}>
+              <div style={{ flex: 1 }}>
+                <div className="chips">{busNumbers(r.rides[0].busNos).map((n) => <span key={n} className="chip">{n}</span>)}</div>
+                <div className="board"><b>{stop}</b>에서 타요{side && <div className="muted side">{side} 쪽</div>}</div>
               </div>
-            ) : (
-              <div>
-                <span className="eta">{r.odsayMin}분</span><span className="muted"> 이동 + 대기</span>
-                <p className="warn">{r.noBusNow ? '지금 운행 중인 버스가 없어요 (첫차 전이거나 막차 후일 수 있어요)' : '버스 대기 시간을 알 수 없어요'}</p>
+              <div className="arrive">
+                {r.eta ? <><span className="eta">{kstClock(at!, r.eta.min)}</span><div className="muted">도착 · {Math.round(r.eta.min)}분</div></>
+                  : <><span className="eta">{r.odsayMin}분</span><div className="muted">+ 대기</div></>}
               </div>
-            )}
-            {r.rides.map((x, j) => (
-              <div key={j} className="ride">
-                {j > 0 && <span className="muted">환승 </span>}
-                <span className="bus">{x.busNos.join(', ')}번</span> {x.from} 승차 → {x.to} 하차 <span className="muted">({x.stops}정류장)</span>
-                {j === 0 && next !== undefined && <div className="muted">다음 버스 약 {Math.round(next)}분 뒤 도착</div>}
-              </div>
+            </div>
+            <div className="wait">
+              {next !== undefined ? <span className="badge live">버스 {Math.max(0, Math.round(next))}분 뒤 도착</span>
+                : r.eta ? <span className="badge">약 {Math.round(leg.intervalMin ?? 0)}분 간격 (추정)</span>
+                : <span className="badge warnb">{r.noBusNow ? '지금 운행 중인 버스 없음' : '도착 정보 없음'}</span>}
+            </div>
+            {r.rides.slice(1).map((x, j) => (
+              <div key={j} className="muted">환승 <b className="bus">{busNumbers(x.busNos).join(' · ')}</b> · {splitStop(x.from)[0]}</div>
             ))}
-            <div className="muted" style={{ marginTop: 6 }}>걷기 {walk}분 · {r.fare ? `요금 ${r.fare.toLocaleString()}원` : '요금 정보 없음'}</div>
+            <div className="muted foot">걷기 {Math.round(walk)}분{r.fare ? ` · ${r.fare.toLocaleString()}원` : ''}</div>
           </article>
         );
       })}
