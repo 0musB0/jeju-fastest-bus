@@ -132,7 +132,7 @@ export default function Home() {
 
   return (
     <main>
-      <h1>제주 가장 빠른 버스</h1>
+      <h1><span>제주</span> 가장 빠른 버스</h1>
       <p className="lead">가까운 정류장이 아니라, 목적지에 가장 먼저 닿는 버스를 찾아요.</p>
       <PlacePicker label="출발" value={from} onPick={setFrom} allowHere />
       <PlacePicker label="도착" value={to} onPick={setTo} />
