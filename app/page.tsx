@@ -3,8 +3,8 @@ import { useEffect, useRef, useState } from 'react';
 import { arrivalMin, kstClock12 as kstClock } from '@/lib/eta';
 import { BOARD_MARGIN_MIN } from '@/lib/config';
 import { parseOdsay, type Route } from '@/lib/odsay';
-import { applyRealtime, directToRoutes, realtimeKeys, type Headways, type PlanResults, type Schedules } from '@/lib/realtime';
-import type { Direct } from '@/lib/direct';
+import { applyRealtime, tripsToRoutes, realtimeKeys, type Headways, type PlanResults, type Schedules } from '@/lib/realtime';
+import type { Trip } from '@/lib/direct';
 import RouteMap from './RouteMap';
 
 type Place = { name: string; address?: string; lat: number; lng: number };
@@ -118,8 +118,8 @@ export default function Home() {
           SX: String(from.lng), SY: String(from.lat), EX: String(to.lng), EY: String(to.lat), SearchPathType: '2', apiKey: ODSAY_KEY,
         })}`).then((r) => r.json());
         const parsed = parseOdsay(body);
-        // ODsay가 실패해도(일일 한도 초과 등) 우리 데이터의 직행 노선은 보여준다
-        odsayErr.current = !parsed.ok && parsed.reason !== '경로 없음' ? (/429|quota/i.test(parsed.reason) ? '오늘 경로 검색 한도를 다 써서 갈아타지 않는 버스만 보여요.' : parsed.reason) : '';
+        // ODsay는 보조: 실패해도(일일 한도 초과 등) 우리 데이터로 찾은 직행·환승 경로를 보여준다
+        odsayErr.current = !parsed.ok && parsed.reason !== '경로 없음' ? (/429|quota/i.test(parsed.reason) ? '경로를 찾지 못했어요. (보조 경로 검색 한도 초과, 내일 다시 채워져요)' : parsed.reason) : '';
         // 실시간 버스 위치로 대기를 채우고, 서버가 찾은 직행 후보를 더한다. ODsay가 경로를 못 찾아도 직행 후보는 본다.
         odsayRef.current = parsed.ok ? [...parsed.routes].sort((a, b) => a.odsayMin - b.odsayMin) : [];
       }
@@ -127,18 +127,18 @@ export default function Home() {
       let results: PlanResults = {};
       let headways: Headways = {};
       let sched: Schedules = {};
-      let direct: Direct[] = [];
+      let trips: Trip[] = [];
       try {
         const q = new URLSearchParams({ q: realtimeKeys(odsay, 30).join(','), from: `${from.lat},${from.lng}`, to: `${to.lat},${to.lng}` });
         const r = await fetch(`/api/plan?${q}`).then((r) => r.json());
         results = r.results ?? {};
         headways = r.headways ?? {};
         sched = { scheduled: r.scheduled, firstBus: r.firstBus };
-        direct = r.direct ?? [];
+        trips = r.trips ?? [];
       } catch { /* 실시간 실패: 아래에서 추정 불가로 표시 */ }
-      // ODsay 경로보다 이동만 1.5배 넘게 걸리는 직행 후보는 뺀다 (정류장 수 × 평균 소요라 긴 노선은 부정확)
+      // ODsay 경로가 있으면, 그보다 이동만 1.5배 넘게 걸리는 우리 후보는 뺀다
       const bestOdsay = odsay[0]?.odsayMin ?? Infinity;
-      const byTime = [...odsay, ...directToRoutes(direct, odsay).filter((r) => r.odsayMin <= bestOdsay * 1.5)];
+      const byTime = [...odsay, ...tripsToRoutes(trips, odsay).filter((r) => r.odsayMin <= bestOdsay * 1.5)];
       if (!byTime.length) return setMsg(odsayErr.current || '버스로 가는 경로가 없어요. 걸어가기 가까운 거리일 수 있어요.');
       // 대기를 알 수 있는 후보가 먼저, 그 안에서 도착이 빠른 순. 모르면 이동 시간 순으로 맨 뒤.
       const ranked = byTime
@@ -148,7 +148,7 @@ export default function Home() {
       setRoutes(ranked.slice(0, 3));
       if (!refresh) setSel(0);
       setAt(new Date());
-      setMsg(odsayErr.current);
+      setMsg('');
     } catch {
       if (!refresh) setMsg('경로 API에 연결하지 못했어요. 잠시 뒤 다시 시도해 주세요.');
     }

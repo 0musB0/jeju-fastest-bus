@@ -1,6 +1,6 @@
-import type { Route } from './odsay.ts';
+import { legFare, routeFare, type Route } from './odsay.ts';
 import { MIN_PER_STOP } from './config.ts';
-import type { Direct } from './direct.ts';
+import type { Trip } from './direct.ts';
 // 제주 버스정보(busopen) BusLocation 응답(XML) 해석. 외부 호출 없음.
 // 응답은 노선의 모든 정류장을 순서대로 주고, 버스가 있는 정류장에만 plateNo가 붙는다.
 
@@ -73,19 +73,17 @@ export function applyRealtime(route: Route, results: PlanResults, headways: Head
   return { ...route, candidate: { ...route.candidate, legs }, ...(noBusNow ? { noBusNow } : {}), ...(firstBus !== undefined ? { firstBus } : {}) };
 }
 
-// 서버가 찾은 직행 후보 → 화면 후보. ODsay에 같은 (노선, 정류장) 직행이 이미 있으면 뺀다.
-export function directToRoutes(direct: Direct[], existing: Route[]): Route[] {
-  const seen = new Set(existing.filter((r) => r.rides.length === 1).flatMap((r) => r.rides[0].routeIds.map((id) => `${id}:${r.rides[0].stationId}`)));
-  return direct
-    .filter((d) => !seen.has(`${d.routeId}:${d.fromId}`))
-    .map((d) => {
-      const rideMin = d.stops * MIN_PER_STOP;
-      const walkBeforeMin = Math.round(d.walkBeforeMin), walkAfterMin = Math.round(d.walkAfterMin);
-      return {
-        candidate: { legs: [{ walkBeforeMin, rideMin }], walkAfterMin },
-        rides: [{ busNos: [d.no], routeIds: [d.routeId], stationId: d.fromId, from: d.fromName, to: d.toName, stops: d.stops, fromPt: d.fromPt, toPt: d.toPt, path: d.path }],
-        fare: 0,
-        odsayMin: walkBeforeMin + rideMin + walkAfterMin,
-      };
-    });
+// 서버가 우리 데이터로 찾은 후보 → 화면 후보. ODsay에 같은 버스·같은 정류장 조합이 이미 있으면 뺀다.
+export function tripsToRoutes(trips: Trip[], existing: Route[]): Route[] {
+  const covered = (t: Trip) => existing.some((r) => r.rides.length === t.legs.length && t.legs.every((l, n) => r.rides[n].stationId === l.fromId && l.routeIds.some((id) => r.rides[n].routeIds.includes(id))));
+  return trips.filter((t) => !covered(t)).map((t) => {
+    const legs = t.legs.map((l) => ({ walkBeforeMin: Math.round(l.walkBeforeMin), rideMin: l.rideMin }));
+    const walkAfterMin = Math.round(t.walkAfterMin);
+    return {
+      candidate: { legs, walkAfterMin },
+      rides: t.legs.map((l) => ({ busNos: l.nos, routeIds: l.routeIds, stationId: l.fromId, from: l.fromName, to: l.toName, stops: l.stops, fromPt: l.fromPt, toPt: l.toPt, path: l.path })),
+      fare: routeFare(t.legs.map((l) => { const f = l.nos.flatMap((n) => legFare(n, l.distM) ?? []); return f.length ? Math.max(...f) : null; }), 0),
+      odsayMin: legs.reduce((s, l) => s + l.walkBeforeMin + l.rideMin, 0) + walkAfterMin,
+    };
+  });
 }

@@ -8,3 +8,5 @@ export const MIN_PER_STOP = 2; // 시간표가 없을 때 정류장당 평균 �
 
 // 카카오 검색을 제주로 제한하는 사각형 (서경,남위,동경,북위)
 export const JEJU_RECT = '126.08,33.10,127.00,33.60';
+export const TRANSFER_M = 200; // 갈아탈 때 걸어서 옮길 수 있는 정류장 거리
+export const TRANSFER_PENALTY_MIN = 10; // 우리 데이터로 찾은 환승 경로의 순위용 대기 어림값 (실제 대기는 시간표로 다시 계산)

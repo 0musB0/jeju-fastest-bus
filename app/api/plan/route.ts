@@ -1,18 +1,26 @@
 import { revalidateTag } from 'next/cache';
 import { headwayMin, parseBusLocation, stopsAway } from '@/lib/realtime';
-import { directCandidates, type Station, type BusRoute } from '@/lib/direct';
+import { findTrips, indexData, type Station, type BusRoute, type RideMin } from '@/lib/direct';
 import stationList from '@/data/stations.json';
 import routeList from '@/data/routes.json';
 import timetableData from '@/data/timetable.json';
-import { arrivals, firstAt, kstMinutes, type Timetable } from '@/lib/timetable';
+import { arrivals, firstAt, kstMinutes, offsetAt, type Timetable } from '@/lib/timetable';
+import { MIN_PER_STOP } from '@/lib/config';
 
-// 실시간: 노선별 버스 위치 → 우리 정류장까지 남은 정류장 수. 직행 후보도 여기서 찾는다.
+// 실시간: 노선별 버스 위치 → 우리 정류장까지 남은 정류장 수. 우리 데이터로 경로 후보(직행·환승 1번)도 여기서 찾는다.
 // 정류장 JSON에 있는 정류장만 받고, 고정된 BusLocation 주소만 부르므로 아무 데나 부르는 프록시가 되지 않는다.
 const stations = stationList as Station[];
 const routes = routeList as BusRoute[];
 const stationIds = new Set(stations.map((s) => s.id));
 const routeById = new Map(routes.map((r) => [r.id, r]));
 const timetable = timetableData as Timetable;
+const index = indexData(stations, routes);
+// 탑승 시간: 시간표의 정류장 간 소요, 없으면 정류장 수 × 평균 소요
+const rideMin: RideMin = (r, i, j) => {
+  const e = timetable[r.id];
+  const m = e ? offsetAt(e.p, j) - offsetAt(e.p, i) : 0;
+  return Math.round(m > 0 ? m : (j - i) * MIN_PER_STOP);
+};
 const ID = /^\d{9}$/;
 const MAX_ROUTES = 10; // 실시간 조회 노선 수
 const MAX_PAIRS = 60; // 시간표는 로컬 데이터라 더 많이 본다
@@ -46,11 +54,13 @@ export async function GET(req: Request) {
     .filter(([r, s]) => ID.test(r ?? '') && stationIds.has(s))
     .slice(0, MAX_PAIRS);
   const from = point(p.get('from')), to = point(p.get('to'));
-  const direct = from && to ? directCandidates(from, to, stations, routes) : [];
+  const trips = from && to ? findTrips(from, to, index, rideMin) : [];
+  const tripFirst = trips.flatMap((t) => t.legs[0].routeIds.map((r) => [r, t.legs[0].fromId]));
+  const tripLater = trips.flatMap((t) => t.legs.slice(1).flatMap((l) => l.routeIds.map((r) => [r, l.fromId])));
 
-  // 노선은 ODsay 후보 먼저, 그다음 직행 후보, 합쳐서 최대 10개
-  const routeIds = [...new Set([...pairs.map(([r]) => r), ...direct.map((d) => d.routeId)])].slice(0, MAX_ROUTES);
-  const allPairs = [...pairs, ...direct.map((d) => [d.routeId, d.fromId])].filter(([r]) => routeIds.includes(r));
+  // 실시간 노선은 ODsay 후보의 첫 버스 먼저, 그다음 우리 후보의 첫 버스, 합쳐서 최대 10개
+  const routeIds = [...new Set([...pairs.map(([r]) => r), ...tripFirst.map(([r]) => r)])].slice(0, MAX_ROUTES);
+  const allPairs = [...pairs, ...tripFirst].filter(([r]) => routeIds.includes(r));
   // 제주 서버는 동시에 여러 개를 보내면 전부 3초를 넘긴다(실측). 2개씩 나눠 보낸다.
   const locs = new Map<string, Awaited<ReturnType<typeof busLocation>>>();
   for (let i = 0; i < routeIds.length; i += CONCURRENCY) {
@@ -71,12 +81,12 @@ export async function GET(req: Request) {
   // 시간표 (KST 기준): 앞으로 3시간 안에 오는 버스, 없으면 첫차 시각
   const now = kstMinutes(new Date());
   const scheduled: Record<string, number[]> = {}, firstBus: Record<string, number> = {};
-  for (const [r, s] of [...pairs, ...direct.map((d) => [d.routeId, d.fromId])]) {
+  for (const [r, s] of [...pairs, ...tripFirst, ...tripLater]) {
     const e = timetable[r], ord = routeById.get(r)?.stops.indexOf(s) ?? -1;
     if (!e || ord < 0) continue;
     const a = arrivals(e, ord, now);
     if (a.length) scheduled[`${r}:${s}`] = a;
     else firstBus[`${r}:${s}`] = firstAt(e, ord);
   }
-  return Response.json({ results, headways, scheduled, firstBus, direct: direct.filter((d) => routeIds.includes(d.routeId)) });
+  return Response.json({ results, headways, scheduled, firstBus, trips });
 }

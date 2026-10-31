@@ -22,7 +22,7 @@ test('결과 코드가 00이 아니면 오류 이유', () => {
   assert.equal(parseBusLocation('<html>오류</html>').ok, false);
 });
 
-import { applyRealtime, realtimeKeys, directToRoutes, headwayMin } from './realtime.ts';
+import { applyRealtime, realtimeKeys, tripsToRoutes, headwayMin } from './realtime.ts';
 import type { Route } from './odsay.ts';
 
 const route: Route = {
@@ -43,11 +43,14 @@ test('실시간 쌍과 분 변환: 두 노선을 합쳐 가까운 순, 정류장
   assert.equal(applyRealtime(route, {}, {}, { scheduled: {}, firstBus: { '405136501:405000153': 350, '405146501:405000153': 340 } }).firstBus, 340);
 });
 
-test('직행 후보: ODsay에 이미 있는 노선·정류장은 빼고 후보로 바꾼다', () => {
-  const d = { routeId: '405136501', no: '365', heading: '시청', fromId: '405000153', fromName: '공항', toName: '시청', stops: 4, walkBeforeMin: 2.4, walkAfterMin: 1, fromPt: { lat: 33.5, lng: 126.5 }, toPt: { lat: 33.51, lng: 126.5 }, path: [] };
-  assert.equal(directToRoutes([d], [route]).length, 0);
-  const [r] = directToRoutes([{ ...d, routeId: '405999999' }], [route]);
-  assert.deepEqual(r.candidate, { legs: [{ walkBeforeMin: 2, rideMin: 8 }], walkAfterMin: 1 });
+test('우리 후보: ODsay에 이미 있는 노선·정류장은 빼고 화면 후보로, 요금은 환승 규칙', () => {
+  const pt = { lat: 33.5, lng: 126.5 };
+  const l = { routeIds: ['405136501'], nos: ['365'], fromId: '405000153', fromName: '공항', toName: '시청', stops: 4, walkBeforeMin: 2.4, rideMin: 8, distM: 3000, fromPt: pt, toPt: pt, path: [] };
+  const t = { legs: [l], walkAfterMin: 1, cost: 11 };
+  assert.equal(tripsToRoutes([t], [route]).length, 0);
+  const [r] = tripsToRoutes([{ ...t, legs: [{ ...l, routeIds: ['405999999'] }, { ...l, nos: ['101'], routeIds: ['405888888'], distM: 30000, walkBeforeMin: 3 }] }], [route]);
+  assert.deepEqual(r.candidate, { legs: [{ walkBeforeMin: 2, rideMin: 8 }, { walkBeforeMin: 3, rideMin: 8 }], walkAfterMin: 1 });
+  assert.equal(r.fare, 2400); // 365(1,150) → 급행 101 30km(2,400): 차액만
 });
 
 test('배차 간격: 노선 길이 × 정류장당 소요 ÷ 버스 수, 환승 구간에 채워진다', () => {
