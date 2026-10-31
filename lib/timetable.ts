@@ -5,7 +5,7 @@ import { MIN_PER_STOP } from './config.ts';
 // 노선별: p = [정류장 순번, 기준 정류장부터 걸리는 분, ...], t = 운행마다 기준 정류장 출발 시각(자정부터 분, 24시 넘으면 1440+)
 export type Entry = { p: number[]; t: number[] };
 export type Timetable = Record<string, Entry>;
-export type Tab = { cols: string[]; rows: string[][] }; // cols[0]·rows[i][0]은 노선번호 열
+export type Tab = { cols: string[]; rows: string[][] }; // "노선번호" 열이 있는 표도 있고 없는 표도 있다
 
 export function parseTime(cell: string): number | null {
   const m = cell.match(/^(\d{1,2}):(\d{2})/);
@@ -13,7 +13,7 @@ export function parseTime(cell: string): number | null {
 }
 
 const norm = (s: string) =>
-  s.replace(/[\s·.]/g, '').replace(/방향|방면/g, '').replace('로타리', '로터리').replace(/^제주터미널/, '제주버스터미널');
+  s.replace(/<[^>]*>/g, '').replace(/[\s·.]/g, '').replace(/방향|방면/g, '').replace('로타리', '로터리').replace(/^제주터미널/, '제주버스터미널');
 const split = (s: string) => {
   const m = s.match(/^([^(]*)\((.*)\)$/);
   return m ? [m[1], m[2]] : [s, ''];
@@ -32,22 +32,24 @@ export function sameStop(col: string, stop: string): boolean {
 }
 
 // 표의 각 행 중 이 노선(정류장 이름 순서)의 운행인 것만 골라 [순번, 시각] 기준점 목록으로.
-// 행의 시각이 있는 정류장이 모두 노선에 순서대로 있고, 노선 길이의 절반 이상을 덮고, 노선에 있는 정류장을 X(안 감)로 건너뛰지 않아야 함.
+// 노선에 없는 이름의 시각은 건너뛴다: BIS 노선이 표의 노선을 토막 낸 것이 많고, 표의 이름이 줄임말("제주여중고")이라 못 맞추는 곳도 있다.
+// 기준점이 노선 길이의 절반 이상을 덮고, 노선에 있는 정류장을 X(안 감)로 표시하지 않아야 한다.
 export function tripsFor(tab: Tab, stops: string[]): [number, number][][] {
-  const cand = tab.cols.map((c, j) => (j === 0 ? [] : stops.flatMap((s, o) => (sameStop(c, s) ? [o] : []))));
+  const cand: (number[] | null)[] = tab.cols.map((c) => (/노선번호|구분|비\s*고/.test(c) || !c ? null : stops.flatMap((s, o) => (sameStop(c, s) ? [o] : []))));
   const trips: [number, number][][] = [];
   for (const row of tab.rows) {
     const anchors: [number, number][] = [];
-    let ok = true, prevOrd = -1, prevMin = -1;
-    for (let j = 1; j < row.length && ok; j++) {
+    let prevOrd = -1, prevMin = -1;
+    for (let j = 0; j < row.length; j++) {
+      if (!cand[j]) continue;
       let min = parseTime(row[j] ?? '');
       if (min === null) continue;
       if (min < prevMin - 600) min += 1440; // 자정 넘김
-      const ord = cand[j]?.find((o) => o > prevOrd);
-      if (ord === undefined) ok = false;
-      else anchors.push([ord, min]), (prevOrd = ord), (prevMin = min);
+      prevMin = min;
+      const ord = cand[j]!.find((o) => o > prevOrd);
+      if (ord !== undefined) anchors.push([ord, min]), (prevOrd = ord);
     }
-    if (!ok || anchors.length < 2) continue;
+    if (anchors.length < 2) continue;
     const lo = anchors[0][0], hi = anchors[anchors.length - 1][0];
     if (hi - lo < stops.length / 2) continue;
     // X(안 감)인 정류장이 노선에 있으면 다른 변형(일찍 끝나거나 늦게 시작)의 운행이다
@@ -78,6 +80,9 @@ export function buildEntry(trips: [number, number][][]): Entry | null {
   const offs = new Map<number, number[]>();
   for (const t of trips.filter((t) => t[0][0] === ref)) for (const [o, m] of t) offs.set(o, [...(offs.get(o) ?? []), m - t[0][1]]);
   const p = [...offs].sort((a, b) => a[0] - b[0]).flatMap(([o, ms]) => [o, median(ms)]);
+  // 이름을 잘못 맞춘 노선 거르기: 소요가 거꾸로 가거나 정류장당 0.5~4분을 벗어나면 버린다
+  const n = p.length / 2, rate = (p[2 * n - 1] - p[1]) / (p[2 * n - 2] - p[0] || 1);
+  if (n < 2 || rate < 0.5 || rate > 4 || p.some((v, i) => i % 2 === 1 && i > 1 && v < p[i - 2])) return null;
   const t = [...new Set(trips.map((tr) => Math.round(tr[0][1] - offsetAt(p, tr[0][0]))))].sort((a, b) => a - b);
   return { p, t };
 }

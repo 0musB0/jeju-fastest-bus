@@ -11,7 +11,7 @@ const nameOf = new Map(stations.map((s) => [s.id, s.name]));
 const day = (d) => (d ? new Date(d.replaceAll('.', '-')).getTime() : 0);
 const latest = new Map();
 for (const t of tabs) {
-  const k = `${t.base}|${t.way}|${t.cols.join(',')}`;
+  const k = `${t.base}|${t.way}`;
   const o = latest.get(k);
   if (!o || day(t.date) > day(o.date) || (day(t.date) === day(o.date) && t.id > o.id)) latest.set(k, t);
 }
