@@ -22,14 +22,14 @@ function loadSdk(): Promise<Kakao> {
 type Mark = { pt: Pt; label: string; kind: 'end' | 'stop' };
 
 // 출발 → 승차 → (하차 → 환승 승차)… → 하차 → 도착. 걷는 구간은 점선, 버스 구간은 실선.
-function marks(from: Pt, to: Pt, rides: Ride[], lanes: Pt[][] | null): { list: Mark[]; segs: { path: Pt[]; bus: boolean }[] } {
+function marks(from: Pt, to: Pt, rides: Ride[]): { list: Mark[]; segs: { path: Pt[]; bus: boolean }[] } {
   const list: Mark[] = [{ pt: from, label: '출발', kind: 'end' }];
   const segs: { path: Pt[]; bus: boolean }[] = [];
   let last = from;
   rides.forEach((r, i) => {
     if (!r.fromPt || !r.toPt) return;
     list.push({ pt: r.fromPt, label: i ? '환승' : '승차', kind: 'stop' });
-    segs.push({ path: [last, r.fromPt], bus: false }, { path: lanes?.[i] ?? (r.path && r.path.length > 1 ? r.path : [r.fromPt, r.toPt]), bus: true }); // 도로 모양 → 없으면 정류장을 이어 그림
+    segs.push({ path: [last, r.fromPt], bus: false }, { path: r.path && r.path.length > 1 ? r.path : [r.fromPt, r.toPt], bus: true }); // 서버가 준 노선 모양(도로) → 없으면 정류장을 이어 그림
     if (i === rides.length - 1) list.push({ pt: r.toPt, label: '하차', kind: 'stop' });
     last = r.toPt;
   });
@@ -38,22 +38,7 @@ function marks(from: Pt, to: Pt, rides: Ride[], lanes: Pt[][] | null): { list: M
   return { list, segs };
 }
 
-// ODsay loadLane: 버스 구간마다 도로를 따라가는 좌표. 고른 경로 하나에만 한 번 부르고, 같은 경로는 다시 부르지 않는다.
-const ODSAY_KEY = process.env.NEXT_PUBLIC_ODSAY_KEY ?? '';
-const laneCache = new Map<string, Promise<Pt[][] | null>>();
-function loadLanes(mapObj: string, n: number): Promise<Pt[][] | null> {
-  if (!laneCache.has(mapObj)) {
-    const url = `https://api.odsay.com/v1/api/loadLane?${new URLSearchParams({ mapObject: `0:0@${mapObj}`, apiKey: ODSAY_KEY })}`;
-    const p = fetch(url).then((r) => r.json()).then((b: { result?: { lane?: { section?: { graphPos?: { x: number; y: number }[] }[] }[] } }) => {
-      const lanes = (b.result?.lane ?? []).map((l) => (l.section ?? []).flatMap((s) => (s.graphPos ?? []).map((g) => ({ lat: Number(g.y), lng: Number(g.x) }))));
-      return lanes.length === n && lanes.every((l) => l.length > 1) ? lanes : null; // 버스 구간 수와 안 맞으면 쓰지 않음
-    }).catch(() => null);
-    laneCache.set(mapObj, p);
-  }
-  return laneCache.get(mapObj)!;
-}
-
-export default function RouteMap({ from, to, rides, mapObj }: { from: Pt; to: Pt; rides: Ride[]; mapObj?: string }) {
+export default function RouteMap({ from, to, rides }: { from: Pt; to: Pt; rides: Ride[] }) {
   const box = useRef<HTMLDivElement>(null);
   const map = useRef<Kakao>(null);
   const drawn = useRef<Kakao[]>([]);
@@ -62,14 +47,14 @@ export default function RouteMap({ from, to, rides, mapObj }: { from: Pt; to: Pt
   useEffect(() => {
     if (!KEY) return;
     let alive = true;
-    Promise.all([loadSdk(), mapObj && ODSAY_KEY ? loadLanes(mapObj, rides.length) : null]).then(([kakao, lanes]) => {
+    loadSdk().then((kakao) => {
       if (!alive || !box.current) return;
       const { maps } = kakao;
       const ll = (p: Pt) => new maps.LatLng(p.lat, p.lng);
       map.current ??= new maps.Map(box.current, { center: ll(from), level: 6 });
       drawn.current.forEach((o) => o.setMap(null));
       const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#e8771e';
-      const { list, segs } = marks(from, to, rides, lanes);
+      const { list, segs } = marks(from, to, rides);
       drawn.current = [
         ...segs.map((s) => new maps.Polyline({ map: map.current, path: s.path.map(ll), strokeWeight: s.bus ? 5 : 3, strokeColor: s.bus ? accent : '#857f74', strokeOpacity: 0.9, strokeStyle: s.bus ? 'solid' : 'shortdash' })),
         ...list.map((m) => new maps.CustomOverlay({ map: map.current, position: ll(m.pt), yAnchor: 1.2, content: `<div class="pin ${m.kind}">${m.label}</div>` })),
@@ -80,7 +65,7 @@ export default function RouteMap({ from, to, rides, mapObj }: { from: Pt; to: Pt
       map.current.setBounds(bounds, 40, 30, 30, 30);
     }).catch((e) => setErr(e.message));
     return () => { alive = false; };
-  }, [from, to, rides, mapObj]);
+  }, [from, to, rides]);
 
   if (!KEY) return null;
   return err ? <p className="warn">{err}</p> : <div ref={box} className="map" role="img" aria-label="경로 지도" />;

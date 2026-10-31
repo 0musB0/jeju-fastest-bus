@@ -1,7 +1,7 @@
 // 노선 모양(도로를 따라가는 좌표)을 bus.jeju.go.kr에서 받아 data/shapes.json으로 저장한다. 지도에 노선을 도로 따라 그릴 때 쓴다.
 // 사이트 노선검색 지도가 쓰는 /data/search/getLinkInfoByLineId (POST, lineId = BIS 노선 ID). 시간표와 같은 사이트, 사용자 승인(2026-10-31).
 // 한 번에 하나씩, 요청 사이 0.3초. 중간 인증서는 워크플로가 NODE_EXTRA_CA_CERTS로 채워 준다.
-// 결과: { 노선ID: { p: [위도, 경도, 위도, 경도, ...], s: [정류장마다 p의 점 번호] } }
+// 결과: { 노선ID: { p: [위도, 경도, 위도, 경도, ...], s: [정류장마다 p의 선분 번호(k → k+1), 못 맞추면 -1] } }
 import { readFile, writeFile } from 'node:fs/promises';
 
 const URL_ = 'https://bus.jeju.go.kr/data/search/getLinkInfoByLineId';
@@ -46,18 +46,26 @@ function simplify(pts, tol = 8) {
   return pts.filter((_, i) => keep[i]);
 }
 
-// 정류장마다 모양의 어느 점인지: 앞 정류장 뒤에서, 30m 안에 처음 닿는 점 (없으면 가장 가까운 점)
+// 점 p에서 선분 a-b까지 거리(m), 평면 근사
+function segDist(p, a, b) {
+  const kx = Math.cos(p[0] * rad) * rad * R, ky = rad * R;
+  const ax = (a[1] - p[1]) * kx, ay = (a[0] - p[0]) * ky, bx = (b[1] - p[1]) * kx, by = (b[0] - p[0]) * ky;
+  const dx = bx - ax, dy = by - ay, L = dx * dx + dy * dy;
+  const t = L ? Math.max(0, Math.min(1, -(ax * dx + ay * dy) / L)) : 0;
+  return Math.hypot(ax + t * dx, ay + t * dy);
+}
+// 정류장마다 모양의 어느 선분(k → k+1) 위인지: 앞 정류장 뒤에서 40m 안에 처음 닿는 선분, 없으면 가장 가까운 선분(150m 넘으면 -1)
 function stopIndex(pts, stops) {
   let prev = 0;
   return stops.map((st) => {
     if (!st) return -1;
     let best = -1, bd = Infinity;
-    for (let i = prev; i < pts.length; i++) {
-      const d = dist(pts[i], st);
-      if (d < 30) { best = i; break; }
-      if (d < bd) (bd = d), (best = i);
+    for (let k = prev; k < pts.length - 1; k++) {
+      const d = segDist(st, pts[k], pts[k + 1]);
+      if (d < 40) { (best = k), (bd = d); break; }
+      if (d < bd) (bd = d), (best = k);
     }
-    if (best < 0 || dist(pts[best], st) > 200) return -1; // 모양과 동떨어진 정류장
+    if (best < 0 || bd > 150) return -1;
     prev = best;
     return best;
   });
@@ -66,6 +74,16 @@ function stopIndex(pts, stops) {
 const routes = JSON.parse(await readFile('data/routes.json', 'utf8'));
 const stations = new Map(JSON.parse(await readFile('data/stations.json', 'utf8')).map((s) => [s.id, [s.lat, s.lng]]));
 const old = JSON.parse(await readFile('data/shapes.json', 'utf8').catch(() => '{}'));
+// node scripts/fetch-shapes.mjs --reindex : 받지 않고 정류장 번호만 다시 계산
+if (process.argv.includes('--reindex')) {
+  for (const r of routes) if (old[r.id]) {
+    const p = old[r.id].p, pts = [];
+    for (let k = 0; k < p.length; k += 2) pts.push([p[k], p[k + 1]]);
+    old[r.id].s = stopIndex(pts, r.stops.map((id) => stations.get(id)));
+  }
+  await writeFile('data/shapes.json', JSON.stringify(old));
+  process.exit(0);
+}
 const out = {};
 let failed = 0;
 for (const r of routes) {

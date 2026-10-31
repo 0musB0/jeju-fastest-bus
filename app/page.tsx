@@ -129,12 +129,16 @@ export default function Home() {
       let sched: Schedules = {};
       let trips: Trip[] = [];
       try {
-        const q = new URLSearchParams({ q: realtimeKeys(odsay, 30).join(','), from: `${from.lat},${from.lng}`, to: `${to.lat},${to.lng}` });
+        const pathKey = (x: Route['rides'][number]) => `${x.routeIds[0]}:${x.stationId}:${x.stops}`;
+        const q = new URLSearchParams({ q: realtimeKeys(odsay, 30).join(','), from: `${from.lat},${from.lng}`, to: `${to.lat},${to.lng}`,
+          paths: refresh ? '' : [...new Set(odsay.slice(0, 6).flatMap((o) => o.rides.map(pathKey)))].join(',') });
         const r = await fetch(`/api/plan?${q}`).then((r) => r.json());
         results = r.results ?? {};
         headways = r.headways ?? {};
         sched = { scheduled: r.scheduled, firstBus: r.firstBus };
         trips = r.trips ?? [];
+        // ODsay 경로의 지도 선을 노선 모양(도로)으로 바꾼다
+        for (const o of odsay) for (const x of o.rides) if (r.paths?.[pathKey(x)]?.length > 1) x.path = r.paths[pathKey(x)];
       } catch { /* 실시간 실패: 아래에서 추정 불가로 표시 */ }
       // ODsay 경로가 있으면, 그보다 이동만 1.5배 넘게 걸리는 우리 후보는 뺀다
       const bestOdsay = odsay[0]?.odsayMin ?? Infinity;
@@ -183,7 +187,7 @@ export default function Home() {
           <span className="muted">30초마다 자동 갱신</span>
         </div>
       )}
-      {from && to && routes[sel] && <RouteMap from={from} to={to} rides={routes[sel].rides} mapObj={routes[sel].mapObj} />}
+      {from && to && routes[sel] && <RouteMap from={from} to={to} rides={routes[sel].rides} />}
       {routes.map((r, i) => {
         const walk = r.candidate.legs.reduce((s, l) => s + l.walkBeforeMin, r.candidate.walkAfterMin);
         const leg = r.candidate.legs[0];

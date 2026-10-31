@@ -1,6 +1,7 @@
 import { revalidateTag } from 'next/cache';
 import { headwayMin, parseBusLocation, stopsAway } from '@/lib/realtime';
-import { findTrips, indexData, roughRide, type Station, type BusRoute, type RideMin } from '@/lib/direct';
+import { findTrips, indexData, legPath, roughRide, type Station, type BusRoute, type RideMin, type Shapes } from '@/lib/direct';
+import shapeData from '@/data/shapes.json';
 import stationList from '@/data/stations.json';
 import routeList from '@/data/routes.json';
 import timetableData from '@/data/timetable.json';
@@ -14,7 +15,7 @@ const routes = routeList as BusRoute[];
 const stationIds = new Set(stations.map((s) => s.id));
 const routeById = new Map(routes.map((r) => [r.id, r]));
 const timetable = timetableData as Timetable;
-const index = indexData(stations, routes);
+const index = indexData(stations, routes, shapeData as Shapes);
 // 탑승 시간: 시간표의 정류장 간 소요, 없으면 정류장 수 × 평균 소요(정류장이 드문 노선은 거리로)
 const rideMin: RideMin = (r, i, j) => {
   const e = timetable[r.id];
@@ -88,5 +89,11 @@ export async function GET(req: Request) {
     if (a.length) scheduled[`${r}:${s}`] = a;
     else firstBus[`${r}:${s}`] = firstAt(e, ord);
   }
-  return Response.json({ results, headways, scheduled, firstBus, trips });
+  // ODsay 경로의 지도 선: "노선:탈 정류장:정류장 수" → 노선 모양 조각 (최대 30개)
+  const paths: Record<string, { lat: number; lng: number }[]> = {};
+  for (const k of (p.get('paths') ?? '').split(',').slice(0, 30)) {
+    const [r, s, n] = k.split(':'), route = routeById.get(r), i = route?.stops.indexOf(s) ?? -1, j = i + Number(n);
+    if (route && i >= 0 && Number.isInteger(Number(n)) && Number(n) > 0 && j < route.stops.length) paths[k] = legPath(index, route, i, j);
+  }
+  return Response.json({ results, headways, scheduled, firstBus, trips, paths });
 }

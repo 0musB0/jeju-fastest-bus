@@ -7,6 +7,8 @@ export type Pt = { lat: number; lng: number };
 export type TripLeg = { routeIds: string[]; nos: string[]; fromId: string; fromName: string; toName: string; stops: number; walkBeforeMin: number; rideMin: number; distM: number; fromPt: Pt; toPt: Pt; path: Pt[] };
 export type Trip = { legs: TripLeg[]; walkAfterMin: number; cost: number };
 // 노선의 i번째 → j번째 정류장 탑승 시간(분). 서버가 시간표로 채워 넘긴다.
+// 노선 모양: p = [위도, 경도, ...], s = 정류장마다 p의 선분 번호(k → k+1), 못 맞추면 -1 (scripts/fetch-shapes.mjs)
+export type Shapes = Record<string, { p: number[]; s: number[] }>;
 export type RideMin = (route: BusRoute, i: number, j: number) => number;
 
 export function distM(a: Pt, b: Pt): number {
@@ -19,7 +21,7 @@ export const walkMin = (a: Pt, b: Pt) => (distM(a, b) * WALK_DETOUR) / WALK_M_PE
 const base = (no: string) => no.split('-')[0];
 
 // 정류장·노선 색인. 서버에서 한 번만 만든다.
-export function indexData(stations: Station[], routes: BusRoute[]) {
+export function indexData(stations: Station[], routes: BusRoute[], shapes: Shapes = {}) {
   const byId = new Map(stations.map((s) => [s.id, s]));
   const onStation = new Map<string, [BusRoute, number][]>();
   routes.forEach((r) => r.stops.forEach((sid, i) => onStation.set(sid, [...(onStation.get(sid) ?? []), [r, i]])));
@@ -43,7 +45,7 @@ export function indexData(stations: Station[], routes: BusRoute[]) {
     for (let k = 1; k < r.stops.length; k++) { const a = byId.get(r.stops[k - 1]), b = byId.get(r.stops[k]); c.push(c[k - 1] + (a && b ? distM(a, b) : 0)); }
     return [r.id, c];
   }));
-  return { byId, onStation, near, cum };
+  return { byId, onStation, near, cum, shapes };
 }
 export type Index = ReturnType<typeof indexData>;
 
@@ -53,9 +55,23 @@ export const routeDist = (ix: Index, r: BusRoute, i: number, j: number) => { con
 export const roughRide = (ix: Index, r: BusRoute, i: number, j: number) => Math.max((j - i) * MIN_PER_STOP, routeDist(ix, r, i, j) / 450);
 const defaultRide: RideMin = (_r, i, j) => (j - i) * MIN_PER_STOP;
 
+// 지도에 그릴 i → j 구간: 노선 모양(도로)이 있으면 그 조각, 없으면 정류장을 이은 선
+export function legPath(ix: Index, r: BusRoute, i: number, j: number): Pt[] {
+  const sh = ix.shapes[r.id], a = sh?.s[i] ?? -1, b = sh?.s[j] ?? -1;
+  const s = ix.byId.get(r.stops[i]), e = ix.byId.get(r.stops[j]);
+  if (sh && s && e && a >= 0 && b >= a) {
+    // 탈 정류장 → 그 뒤 도로 꺾이는 점들 → 내릴 정류장
+    const out: Pt[] = [{ lat: s.lat, lng: s.lng }];
+    for (let k = a + 1; k <= b; k++) out.push({ lat: sh.p[2 * k], lng: sh.p[2 * k + 1] });
+    out.push({ lat: e.lat, lng: e.lng });
+    return out;
+  }
+  return r.stops.slice(i, j + 1).flatMap((id) => { const p = ix.byId.get(id); return p ? [{ lat: p.lat, lng: p.lng }] : []; });
+}
+
 function leg(ix: Index, r: BusRoute, i: number, j: number, walkBeforeMin: number, ride: RideMin): TripLeg {
   const s = ix.byId.get(r.stops[i])!, e = ix.byId.get(r.stops[j])!;
-  const path = r.stops.slice(i, j + 1).flatMap((id) => { const p = ix.byId.get(id); return p ? [{ lat: p.lat, lng: p.lng }] : []; });
+  const path = legPath(ix, r, i, j);
   const d = routeDist(ix, r, i, j);
   return { routeIds: [r.id], nos: [r.no], fromId: s.id, fromName: s.name, toName: e.name, stops: j - i, walkBeforeMin, rideMin: ride(r, i, j), distM: d, fromPt: { lat: s.lat, lng: s.lng }, toPt: { lat: e.lat, lng: e.lng }, path };
 }

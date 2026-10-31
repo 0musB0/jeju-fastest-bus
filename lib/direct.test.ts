@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { findTrips, indexData, distM } from './direct.ts';
+import { findTrips, indexData, distM, legPath } from './direct.ts';
 
 // 위도 0.001도 ≈ 111m
 const st = (id: string, lat: number) => ({ id, name: id, lat, lng: 126.5 });
@@ -48,4 +48,12 @@ test('두 번 환승: 한 번으로 안 닿으면 세 노선을 잇는다', () =
   ];
   const r = findTrips({ lat: 33.5, lng: 126.5 }, { lat: 33.554, lng: 126.5 }, indexData(st3, routes));
   assert.deepEqual(r.map((t) => t.legs.map((l) => `${l.nos[0]}@${l.fromId}`)), [['100@A', '200@P', '300@Q']]);
+});
+
+test('지도 선: 노선 모양이 있으면 정류장 사이 도로 좌표 조각, 없으면 정류장을 이음', () => {
+  const st4 = [st('A', 33.5), st('B', 33.505)];
+  const r = { id: '1', no: '100', to: '', stops: ['A', 'B'] };
+  const shapes = { '1': { p: [33.5, 126.5, 33.502, 126.51, 33.505, 126.5], s: [0, 1] } };
+  assert.equal(legPath(indexData(st4, [r], shapes), r, 0, 1).length, 3);
+  assert.equal(legPath(indexData(st4, [r]), r, 0, 1).length, 2);
 });

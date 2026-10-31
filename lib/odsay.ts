@@ -5,7 +5,7 @@ import { WALK_M_PER_MIN } from './config.ts';
 export type Pt = { lat: number; lng: number };
 export type Ride = { busNos: string[]; routeIds: string[]; stationId: string; from: string; to: string; stops: number; fromPt?: Pt; toPt?: Pt; path?: Pt[] }; // path = 지나는 정류장 좌표 (지도에 노선을 그림)
 // fare 0 = 요금 모름 (직행 후보). noBusNow = 실시간 조회는 됐는데 오는 버스가 없음. firstBus = 오늘 운행이 끝났을 때 첫차 시각(자정부터 분).
-export type Route = { candidate: Candidate; rides: Ride[]; fare: number; odsayMin: number; noBusNow?: boolean; firstBus?: number; mapObj?: string }; // mapObj: ODsay loadLane(도로 모양)용
+export type Route = { candidate: Candidate; rides: Ride[]; fare: number; odsayMin: number; noBusNow?: boolean; firstBus?: number };
 export type Parsed = { ok: true; routes: Route[] } | { ok: false; reason: string };
 
 type Sub = { trafficType: number; sectionTime?: number; distance?: number; startName?: string; endName?: string; stationCount?: number; startLocalStationID?: string; startX?: number; startY?: number; endX?: number; endY?: number; lane?: { busNo?: string; busLocalBlID?: string }[]; passStopList?: { stations?: { x?: string | number; y?: string | number }[] } };
@@ -44,7 +44,7 @@ export function parseOdsay(body: unknown): Parsed {
   if (!Array.isArray(b?.result?.path)) return { ok: false, reason: '경로 API 응답 형식이 다름' };
 
   const routes: Route[] = [];
-  for (const p of b.result.path as { info?: { payment?: number; totalTime?: number; mapObj?: string }; subPath?: Sub[] }[]) {
+  for (const p of b.result.path as { info?: { payment?: number; totalTime?: number }; subPath?: Sub[] }[]) {
     const subs = p.subPath ?? [];
     if (!subs.length || subs.some((s) => s.trafficType === 1)) continue; // 제주는 지하철 없음, 섞여 오면 버림
     const legs: Candidate['legs'] = [];
@@ -64,7 +64,7 @@ export function parseOdsay(body: unknown): Parsed {
       }
     }
     if (!legs.length) continue;
-    routes.push({ candidate: { legs, walkAfterMin: walk }, rides, fare: routeFare(fares, p.info?.payment ?? 0), odsayMin: p.info?.totalTime ?? 0, mapObj: p.info?.mapObj });
+    routes.push({ candidate: { legs, walkAfterMin: walk }, rides, fare: routeFare(fares, p.info?.payment ?? 0), odsayMin: p.info?.totalTime ?? 0 });
   }
   return routes.length ? { ok: true, routes } : { ok: false, reason: '경로 없음' };
 }
