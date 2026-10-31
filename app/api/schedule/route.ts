@@ -5,7 +5,8 @@ import type { BusRoute } from '@/lib/direct';
 // scripts/fetch-schedules.mjs가 노선 묶음마다 부른다. 노선 JSON에 있는 묶음 번호만 받고 고정 주소만 부르므로 프록시가 되지 않는다.
 // 같은 주소는 하루 동안 캐시해서 여러 번 불려도 제주 서버에는 한 번만 간다.
 export const maxDuration = 60;
-const BASE = 'https://bus.jeju.go.kr';
+// https는 인증서 체인 문제로 Node fetch가 실패해서(추정) http를 쓴다. 공개 시간표라 민감 정보 없음
+const BASE = 'http://bus.jeju.go.kr';
 const bases = new Set((routeList as BusRoute[]).map((r) => r.no.split('-')[0]));
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -44,6 +45,7 @@ export async function GET(req: Request) {
     }
     return Response.json({ tabs });
   } catch (e) {
-    return Response.json({ error: `시간표 서버 오류: ${(e as Error).message}` }, { status: 502 });
+    const err = e as Error & { cause?: { code?: string; message?: string } };
+    return Response.json({ error: `시간표 서버 오류: ${err.message} ${err.cause?.code ?? err.cause?.message ?? ''}` }, { status: 502 });
   }
 }
