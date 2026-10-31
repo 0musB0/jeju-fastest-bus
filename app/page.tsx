@@ -173,7 +173,7 @@ export default function Home() {
           {stale && <button className="primary" onClick={plan}>다시 계산</button>}
         </div>
       )}
-      {from && to && routes[sel] && <RouteMap from={from} to={to} rides={routes[sel].rides} />}
+      {from && to && routes[sel] && <RouteMap from={from} to={to} rides={routes[sel].rides} mapObj={routes[sel].mapObj} />}
       {routes.map((r, i) => {
         const walk = r.candidate.legs.reduce((s, l) => s + l.walkBeforeMin, r.candidate.walkAfterMin);
         const leg = r.candidate.legs[0];
