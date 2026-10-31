@@ -180,7 +180,7 @@ export default function Home() {
                 <div className="board"><b>{stop}</b>에서 타요{side && <div className="muted side">{side} 쪽</div>}</div>
               </div>
               <div className="arrive">
-                {r.eta ? <><span className="eta">{kstClock(at!, r.eta.min)}</span><div className="muted">도착 · {Math.round(r.eta.min)}분</div></>
+                {r.eta ? <><span className="eta">{Math.round(r.eta.min)}분</span><div className="muted">{kstClock(at!, r.eta.min)} 도착</div></>
                   : <><span className="eta">{r.odsayMin}분</span><div className="muted">+ 대기</div></>}
               </div>
             </div>
