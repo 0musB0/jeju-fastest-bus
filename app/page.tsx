@@ -139,9 +139,9 @@ export default function Home() {
           <path d="M16 7c0-2 1-3 2.5-3.5" stroke="#5a7d2a" strokeWidth="2" fill="none" strokeLinecap="round" />
           <path d="M17 6c3-3 8-2 9 0-3 2-7 2-9 0z" fill="#6c9a2e" />
         </svg>
-        <span>제주</span> 가장 빠른 버스
+        <span>혼저</span> 탑서
       </h1>
-      <p className="lead">가까운 정류장이 아니라, 목적지에 가장 먼저 닿는 버스를 찾아요.</p>
+      <p className="lead">제주 버스, 가까운 정류장이 아니라 목적지에 가장 먼저 닿는 버스를 찾아요.</p>
       <PlacePicker label="출발" value={from} onPick={setFrom} allowHere />
       <PlacePicker label="도착" value={to} onPick={setTo} />
       {msg && <p className="muted">{msg}</p>}
