@@ -13,9 +13,9 @@ type Sub = { trafficType: number; sectionTime?: number; distance?: number; start
 // 제주 버스 요금 (카드·일반, bus.jeju.go.kr 확인 2026-10-31): 간선·지선 1,150원, 급행(1xx)은 20km까지 2,000원 + 5km마다 200원, 최대 3,000원.
 // 모르는 요금 노선(리무진 600, 8xx 등)은 null.
 export function legFare(busNo: string, distM: number): number | null {
-  if (/^1\d\d(-|$)/.test(busNo)) return Math.min(3000, 2000 + Math.ceil(Math.max(0, distM - 20000) / 5000) * 200);
-  if (/^600(-|$)/.test(busNo)) return null; // 공항리무진은 요금 체계가 다름
-  return /^[2-7]\d\d(-|$)/.test(busNo) ? 1150 : null;
+  if (/^1\d\d(?!\d)/.test(busNo)) return Math.min(3000, 2000 + Math.ceil(Math.max(0, distM - 20000) / 5000) * 200);
+  if (/^600(?!\d)/.test(busNo)) return null; // 공항리무진은 요금 체계가 다름
+  return /^[2-7]\d\d(?!\d)/.test(busNo) ? 1150 : null;
 }
 // 환승은 내린 뒤 40분 안에 2번까지 무료(더 비싼 버스로 갈아타면 차액만) → 3대마다 가장 비싼 한 대 요금.
 // ODsay 요금은 구간 요금을 그냥 더한 값이라(301+101 = 4,150원) 직접 계산하고, 모르는 노선이 섞이면 ODsay 값을 쓴다.
@@ -57,12 +57,14 @@ export function parseOdsay(body: unknown): Parsed {
         legs.push({ walkBeforeMin: walk, rideMin: s.sectionTime ?? 0 });
         const lanes = s.lane ?? [];
         rides.push({ busNos: lanes.map((l) => l.busNo ?? '?'), routeIds: lanes.map((l) => bisId(l.busLocalBlID)), stationId: bisId(s.startLocalStationID), from: s.startName ?? '', to: s.endName ?? '', stops: s.stationCount ?? 0, fromPt: pt(s.startX, s.startY), toPt: pt(s.endX, s.endY), path: s.passStopList?.stations?.flatMap((st) => pt(st.x, st.y) ?? []) });
-        fares.push(Math.max(...lanes.map((l) => legFare(l.busNo ?? '', s.distance ?? 0) ?? Infinity)));
+        // 같은 구간을 여러 노선이 다니면 요금을 아는 노선 중 비싼 쪽 (모르는 노선만 있으면 null)
+        const known = lanes.flatMap((l) => legFare(l.busNo ?? '', s.distance ?? 0) ?? []);
+        fares.push(known.length ? Math.max(...known) : null);
         walk = 0;
       }
     }
     if (!legs.length) continue;
-    routes.push({ candidate: { legs, walkAfterMin: walk }, rides, fare: routeFare(fares.map((f) => (Number.isFinite(f) ? f : null)), p.info?.payment ?? 0), odsayMin: p.info?.totalTime ?? 0, mapObj: p.info?.mapObj });
+    routes.push({ candidate: { legs, walkAfterMin: walk }, rides, fare: routeFare(fares, p.info?.payment ?? 0), odsayMin: p.info?.totalTime ?? 0, mapObj: p.info?.mapObj });
   }
   return routes.length ? { ok: true, routes } : { ok: false, reason: '경로 없음' };
 }

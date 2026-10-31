@@ -99,7 +99,7 @@ export function arrivals(e: Entry, ord: number, nowMin: number, horizon = 180): 
 }
 
 // 이 정류장 첫차 시각 (자정부터 분)
-export const firstAt = (e: Entry, ord: number) => (((Math.min(...e.t) + offsetAt(e.p, ord)) % 1440) + 1440) % 1440;
+export const firstAt = (e: Entry, ord: number) => ((Math.round(Math.min(...e.t) + offsetAt(e.p, ord)) % 1440) + 1440) % 1440;
 
 // KST 지금 = 자정부터 몇 분
 export function kstMinutes(now: Date): number {
