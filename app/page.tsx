@@ -55,7 +55,7 @@ function PlacePicker({ label, value, onPick, allowHere }: { label: string; value
       ) : (
         <>
           <form onSubmit={search} className="row" style={{ marginTop: 6 }}>
-            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={allowHere ? '출발 장소 검색' : '어디로 가세요?'} enterKeyHint="search" />
+            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={allowHere ? '출발 장소 검색' : '어드레 감수광?'} enterKeyHint="search" />
             <button className="primary" disabled={!q.trim()}>검색</button>
           </form>
           {allowHere && (
