@@ -13,6 +13,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - name: 사이트 중간 인증서 받기 (서버가 인증서 체인을 다 보내지 않아 Node가 거부함)
+        run: |
+          URI=$(echo | openssl s_client -connect bus.jeju.go.kr:443 -servername bus.jeju.go.kr 2>/dev/null | openssl x509 -noout -ext authorityInfoAccess | grep -o 'CA Issuers - URI:.*' | sed 's/CA Issuers - URI://')
+          echo "중간 인증서: $URI"
+          curl -sSf "$URI" -o ca.der
+          openssl x509 -inform DER -in ca.der -out ca.pem 2>/dev/null || cp ca.der ca.pem
+          echo "NODE_EXTRA_CA_CERTS=$PWD/ca.pem" >> "$GITHUB_ENV"
       - run: node scripts/fetch-schedules.mjs
       - run: node --experimental-strip-types scripts/build-timetable.mjs
       - name: 바뀐 데이터 커밋
