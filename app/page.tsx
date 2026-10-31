@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
-import { arrivalMin, kstClock } from '@/lib/eta';
+import { arrivalMin, kstClock12 as kstClock } from '@/lib/eta';
 import { BOARD_MARGIN_MIN } from '@/lib/config';
 import { parseOdsay, type Route } from '@/lib/odsay';
 import { applyRealtime, directToRoutes, realtimeKeys, type Headways, type PlanResults } from '@/lib/realtime';

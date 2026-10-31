@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { arrivalMin, kstClock } from './eta.ts';
+import { arrivalMin, kstClock, kstClock12 } from './eta.ts';
 
 const ride = 20, walkAfter = 3;
 
@@ -42,4 +42,6 @@ test('자정 전후 KST: UTC 14:55는 KST 23:55, 20분 뒤는 00:15', () => {
   const now = new Date('2026-10-31T14:55:00Z');
   assert.equal(kstClock(now), '23:55');
   assert.equal(kstClock(now, 20), '00:15');
+  assert.equal(kstClock12(now), '11:55 PM');
+  assert.equal(kstClock12(now, 20), '12:15 AM');
 });

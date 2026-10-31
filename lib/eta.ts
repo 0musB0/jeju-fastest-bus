@@ -37,3 +37,9 @@ export function kstClock(now: Date, plusMin = 0): string {
   return new Intl.DateTimeFormat('ko-KR', { timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
     .format(new Date(now.getTime() + plusMin * 60_000));
 }
+
+// 화면용 12시간 표기: "10:51 PM"
+export function kstClock12(now: Date, plusMin = 0): string {
+  return new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Seoul', hour: 'numeric', minute: '2-digit', hour12: true })
+    .format(new Date(now.getTime() + plusMin * 60_000));
+}
