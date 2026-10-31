@@ -34,3 +34,10 @@ test('요금: 환승 2번까지는 가장 비싼 버스 요금만 (301 + 급행 
   assert.equal(routeFare([1150, 1150, 1150, 1150], 4600), 2300); // 4번째 버스는 다시 냄
   assert.equal(routeFare([1150, null], 6650), 6650);
 });
+
+test('ODsay ID 앞의 JEB는 떼고 제주 BIS ID로', () => {
+  const r = parseOdsay({ result: { path: [{ info: { payment: 1150, totalTime: 20 }, subPath: [{ trafficType: 2, sectionTime: 15, stationCount: 5, startLocalStationID: 'JEB405000520', lane: [{ busNo: '791', busLocalBlID: 'JEB405579101' }] }] }] } });
+  assert.ok(r.ok);
+  assert.equal(r.routes[0].rides[0].stationId, '405000520');
+  assert.deepEqual(r.routes[0].rides[0].routeIds, ['405579101']);
+});

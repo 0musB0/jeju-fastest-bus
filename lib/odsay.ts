@@ -27,6 +27,8 @@ export function routeFare(legs: (number | null)[], odsayFare: number): number {
   return total;
 }
 
+// ODsay가 2026-10-31부터 제주 ID 앞에 "JEB"를 붙여 준다 (JEB405579101). 숫자만 남긴다.
+const bisId = (v?: string | number) => String(v ?? '').replace(/^\D+/, '');
 const pt = (x?: number | string, y?: number | string) => (x && y ? { lat: Number(y), lng: Number(x) } : undefined);
 const walkMin = (s: Sub) => s.sectionTime || Math.round((s.distance ?? 0) / WALK_M_PER_MIN);
 
@@ -54,7 +56,7 @@ export function parseOdsay(body: unknown): Parsed {
       else if (s.trafficType === 2) {
         legs.push({ walkBeforeMin: walk, rideMin: s.sectionTime ?? 0 });
         const lanes = s.lane ?? [];
-        rides.push({ busNos: lanes.map((l) => l.busNo ?? '?'), routeIds: lanes.map((l) => String(l.busLocalBlID ?? '')), stationId: String(s.startLocalStationID ?? ''), from: s.startName ?? '', to: s.endName ?? '', stops: s.stationCount ?? 0, fromPt: pt(s.startX, s.startY), toPt: pt(s.endX, s.endY), path: s.passStopList?.stations?.flatMap((st) => pt(st.x, st.y) ?? []) });
+        rides.push({ busNos: lanes.map((l) => l.busNo ?? '?'), routeIds: lanes.map((l) => bisId(l.busLocalBlID)), stationId: bisId(s.startLocalStationID), from: s.startName ?? '', to: s.endName ?? '', stops: s.stationCount ?? 0, fromPt: pt(s.startX, s.startY), toPt: pt(s.endX, s.endY), path: s.passStopList?.stations?.flatMap((st) => pt(st.x, st.y) ?? []) });
         fares.push(Math.max(...lanes.map((l) => legFare(l.busNo ?? '', s.distance ?? 0) ?? Infinity)));
         walk = 0;
       }
