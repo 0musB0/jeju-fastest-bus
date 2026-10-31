@@ -1,0 +1,17 @@
+name: 정확도 확인
+on:
+  workflow_dispatch:
+    inputs:
+      minutes:
+        description: 추적 시간(분)
+        default: '60'
+jobs:
+  track:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node scripts/accuracy.mjs ${{ inputs.minutes }}
