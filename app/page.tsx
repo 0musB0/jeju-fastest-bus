@@ -189,9 +189,19 @@ export default function Home() {
                 : r.eta ? <span className="badge">약 {Math.round(leg.intervalMin ?? 0)}분 간격 (추정)</span>
                 : <span className="badge warnb">{r.noBusNow ? '지금 운행 중인 버스 없음' : '도착 정보 없음'}</span>}
             </div>
-            {r.rides.slice(1).map((x, j) => (
-              <div key={j} className="muted">환승 <b className="bus">{busNumbers(x.busNos).join(' · ')}</b> · {splitStop(x.from)[0]}</div>
-            ))}
+            <ol className="steps">
+              {r.rides.slice(1).map((x, j) => {
+                const prev = r.rides[j];
+                const off = splitStop(prev.to)[0], on = splitStop(x.from)[0];
+                return (
+                  <li key={j}>
+                    <b>{off}</b>에서 내려 <b className="bus">{busNumbers(x.busNos).join(' · ')}</b>번으로 환승
+                    {on !== off && <span className="muted"> ({on}까지 걸어서)</span>}
+                  </li>
+                );
+              })}
+              <li><b>{splitStop(r.rides.at(-1)!.to)[0]}</b>에서 내려요 <span className="muted">({r.rides.reduce((s, x) => s + x.stops, 0)}정류장)</span></li>
+            </ol>
             <div className="muted foot">걷기 {Math.round(walk)}분{r.fare ? ` · ${r.fare.toLocaleString()}원` : ''}</div>
           </article>
         );
