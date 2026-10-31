@@ -22,18 +22,18 @@ function loadSdk(): Promise<Kakao> {
 type Mark = { pt: Pt; label: string; kind: 'end' | 'stop' };
 
 // 출발 → 승차 → (하차 → 환승 승차)… → 하차 → 도착. 걷는 구간은 점선, 버스 구간은 실선.
-function marks(from: Pt, to: Pt, rides: Ride[]): { list: Mark[]; segs: { a: Pt; b: Pt; bus: boolean }[] } {
+function marks(from: Pt, to: Pt, rides: Ride[]): { list: Mark[]; segs: { path: Pt[]; bus: boolean }[] } {
   const list: Mark[] = [{ pt: from, label: '출발', kind: 'end' }];
-  const segs: { a: Pt; b: Pt; bus: boolean }[] = [];
+  const segs: { path: Pt[]; bus: boolean }[] = [];
   let last = from;
   rides.forEach((r, i) => {
     if (!r.fromPt || !r.toPt) return;
     list.push({ pt: r.fromPt, label: i ? '환승' : '승차', kind: 'stop' });
-    segs.push({ a: last, b: r.fromPt, bus: false }, { a: r.fromPt, b: r.toPt, bus: true });
+    segs.push({ path: [last, r.fromPt], bus: false }, { path: r.path && r.path.length > 1 ? r.path : [r.fromPt, r.toPt], bus: true }); // 정류장을 이어 그림 (도로 모양까지는 아님)
     if (i === rides.length - 1) list.push({ pt: r.toPt, label: '하차', kind: 'stop' });
     last = r.toPt;
   });
-  segs.push({ a: last, b: to, bus: false });
+  segs.push({ path: [last, to], bus: false });
   list.push({ pt: to, label: '도착', kind: 'end' });
   return { list, segs };
 }
@@ -56,11 +56,12 @@ export default function RouteMap({ from, to, rides }: { from: Pt; to: Pt; rides:
       const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#e8771e';
       const { list, segs } = marks(from, to, rides);
       drawn.current = [
-        ...segs.map((s) => new maps.Polyline({ map: map.current, path: [ll(s.a), ll(s.b)], strokeWeight: s.bus ? 5 : 3, strokeColor: s.bus ? accent : '#857f74', strokeOpacity: 0.9, strokeStyle: s.bus ? 'solid' : 'shortdash' })),
+        ...segs.map((s) => new maps.Polyline({ map: map.current, path: s.path.map(ll), strokeWeight: s.bus ? 5 : 3, strokeColor: s.bus ? accent : '#857f74', strokeOpacity: 0.9, strokeStyle: s.bus ? 'solid' : 'shortdash' })),
         ...list.map((m) => new maps.CustomOverlay({ map: map.current, position: ll(m.pt), yAnchor: 1.2, content: `<div class="pin ${m.kind}">${m.label}</div>` })),
       ];
       const bounds = new maps.LatLngBounds();
       list.forEach((m) => bounds.extend(ll(m.pt)));
+      segs.forEach((s) => s.path.forEach((p) => bounds.extend(ll(p))));
       map.current.setBounds(bounds, 40, 30, 30, 30);
     }).catch((e) => setErr(e.message));
     return () => { alive = false; };

@@ -3,14 +3,14 @@ import { WALK_M_PER_MIN } from './config.ts';
 
 // routeIds·stationId는 제주 BIS ID (ODsay의 busLocalBlID, startLocalStationID). 실시간 조회에 쓴다.
 export type Pt = { lat: number; lng: number };
-export type Ride = { busNos: string[]; routeIds: string[]; stationId: string; from: string; to: string; stops: number; fromPt?: Pt; toPt?: Pt };
+export type Ride = { busNos: string[]; routeIds: string[]; stationId: string; from: string; to: string; stops: number; fromPt?: Pt; toPt?: Pt; path?: Pt[] }; // path = 지나는 정류장 좌표 (지도에 노선을 그림)
 // fare 0 = 요금 모름 (직행 후보). noBusNow = 실시간 조회는 됐는데 오는 버스가 없음. firstBus = 오늘 운행이 끝났을 때 첫차 시각(자정부터 분).
 export type Route = { candidate: Candidate; rides: Ride[]; fare: number; odsayMin: number; noBusNow?: boolean; firstBus?: number };
 export type Parsed = { ok: true; routes: Route[] } | { ok: false; reason: string };
 
-type Sub = { trafficType: number; sectionTime?: number; distance?: number; startName?: string; endName?: string; stationCount?: number; startLocalStationID?: string; startX?: number; startY?: number; endX?: number; endY?: number; lane?: { busNo?: string; busLocalBlID?: string }[] };
+type Sub = { trafficType: number; sectionTime?: number; distance?: number; startName?: string; endName?: string; stationCount?: number; startLocalStationID?: string; startX?: number; startY?: number; endX?: number; endY?: number; lane?: { busNo?: string; busLocalBlID?: string }[]; passStopList?: { stations?: { x?: string | number; y?: string | number }[] } };
 
-const pt = (x?: number, y?: number) => (x && y ? { lat: Number(y), lng: Number(x) } : undefined);
+const pt = (x?: number | string, y?: number | string) => (x && y ? { lat: Number(y), lng: Number(x) } : undefined);
 const walkMin = (s: Sub) => s.sectionTime || Math.round((s.distance ?? 0) / WALK_M_PER_MIN);
 
 // ODsay 대중교통 길찾기 응답 → 후보. 응답 모양이 다르면 이유를 담아 돌려준다.
@@ -36,7 +36,7 @@ export function parseOdsay(body: unknown): Parsed {
       else if (s.trafficType === 2) {
         legs.push({ walkBeforeMin: walk, rideMin: s.sectionTime ?? 0 });
         const lanes = s.lane ?? [];
-        rides.push({ busNos: lanes.map((l) => l.busNo ?? '?'), routeIds: lanes.map((l) => String(l.busLocalBlID ?? '')), stationId: String(s.startLocalStationID ?? ''), from: s.startName ?? '', to: s.endName ?? '', stops: s.stationCount ?? 0, fromPt: pt(s.startX, s.startY), toPt: pt(s.endX, s.endY) });
+        rides.push({ busNos: lanes.map((l) => l.busNo ?? '?'), routeIds: lanes.map((l) => String(l.busLocalBlID ?? '')), stationId: String(s.startLocalStationID ?? ''), from: s.startName ?? '', to: s.endName ?? '', stops: s.stationCount ?? 0, fromPt: pt(s.startX, s.startY), toPt: pt(s.endX, s.endY), path: s.passStopList?.stations?.flatMap((st) => pt(st.x, st.y) ?? []) });
         walk = 0;
       }
     }
