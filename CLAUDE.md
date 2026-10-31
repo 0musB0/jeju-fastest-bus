@@ -21,9 +21,9 @@
 | --- | --- | --- |
 | 장소 → 좌표 | 카카오 로컬 키워드 검색 (REST 키) | 서버에서만 호출. 검색 범위는 항상 제주 `rect`로 제한 |
 | 경로 후보, 요금 | ODsay 대중교통 길찾기 (**Web 키**) | **브라우저에서 직접 호출**. 콘솔의 허용 도메인은 Vercel 주소만. Server 키는 쓰지 않는다 (Vercel IP가 계속 바뀜). Referer를 꾸며 서버에서 호출하지 않는다 (약관 위반 소지) |
-| 정류장, 노선, 시간표 | 제주 버스정보 busopen (`Station`, `Bus`, `BusLocation`) | `scripts/fetch-data.mjs`를 GitHub Actions가 매달 돌려 `data/*.json`으로 커밋 |
+| 정류장, 노선 | 제주 버스정보 busopen (`Station`, `Bus`, `BusLocation`) | `scripts/fetch-data.mjs`를 GitHub Actions가 매달 돌려 `data/*.json`으로 커밋. busopen은 미국 GitHub 러너에서 시간 초과가 날 수 있음(2026-10-31) |
+| 시간표 | bus.jeju.go.kr `/data/schedule/getScheduleInfo`·`getScheduleTableInfo` (robots.txt·약관 없음 확인, 사용자 승인 2026-10-31) | `scripts/fetch-schedules.mjs` → `data/schedules.json`, `scripts/build-timetable.mjs`가 주요 정류장 이름을 BIS 정류장과 맞춰 `data/timetable.json`(노선 ID별)으로. 매달, 요청 사이 0.3초 |
 | 실시간 위치 | 제주 버스정보 busopen `BusLocation?route=` (키 없음, 1단계에서 선택) | 노선 단위 조회, 검색 1회당 최대 10개 노선. 대기 = 남은 정류장 수 × 구간 정류장당 소요. `BusArrives`(도착 예정)는 값이 2022·2025년에 멈춰 있어 쓰지 않는다. 서버가 가끔 3초를 넘긴다 |
-| 마지막 백업 | bus.jeju.go.kr | 이용약관과 robots.txt를 확인한 뒤에만. 그 전에는 쓰지 않는다 |
 
 - API 키는 Vercel 환경 변수에만 둔다. 커밋, 로그, 클라이언트 번들에 넣지 않는다 (ODsay Web 키만 예외).
 - 공공 API는 오류를 HTTP 200에 담아 보낼 수 있다. 결과 코드를 확인하고, 오류 응답은 캐시하지 않는다.

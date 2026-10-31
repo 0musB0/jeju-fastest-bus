@@ -3,12 +3,16 @@ import { headwayMin, parseBusLocation, stopsAway } from '@/lib/realtime';
 import { directCandidates, type Station, type BusRoute } from '@/lib/direct';
 import stationList from '@/data/stations.json';
 import routeList from '@/data/routes.json';
+import timetableData from '@/data/timetable.json';
+import { arrivals, firstAt, kstMinutes, type Timetable } from '@/lib/timetable';
 
 // 실시간: 노선별 버스 위치 → 우리 정류장까지 남은 정류장 수. 직행 후보도 여기서 찾는다.
 // 정류장 JSON에 있는 정류장만 받고, 고정된 BusLocation 주소만 부르므로 아무 데나 부르는 프록시가 되지 않는다.
 const stations = stationList as Station[];
 const routes = routeList as BusRoute[];
 const stationIds = new Set(stations.map((s) => s.id));
+const routeById = new Map(routes.map((r) => [r.id, r]));
+const timetable = timetableData as Timetable;
 const ID = /^\d{9}$/;
 const MAX_ROUTES = 10;
 const CONCURRENCY = 2;
@@ -62,5 +66,15 @@ export async function GET(req: Request) {
     const h = loc.ok ? headwayMin(loc.stops) : undefined;
     if (h) headways[r] = h;
   }
-  return Response.json({ results, headways, direct: direct.filter((d) => routeIds.includes(d.routeId)) });
+  // 시간표 (KST 기준): 앞으로 3시간 안에 오는 버스, 없으면 첫차 시각
+  const now = kstMinutes(new Date());
+  const scheduled: Record<string, number[]> = {}, firstBus: Record<string, number> = {};
+  for (const [r, s] of allPairs) {
+    const e = timetable[r], ord = routeById.get(r)?.stops.indexOf(s) ?? -1;
+    if (!e || ord < 0) continue;
+    const a = arrivals(e, ord, now);
+    if (a.length) scheduled[`${r}:${s}`] = a;
+    else firstBus[`${r}:${s}`] = firstAt(e, ord);
+  }
+  return Response.json({ results, headways, scheduled, firstBus, direct: direct.filter((d) => routeIds.includes(d.routeId)) });
 }

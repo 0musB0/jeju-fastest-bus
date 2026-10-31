@@ -14,6 +14,7 @@ jobs:
         with:
           node-version: 22
       - run: node scripts/fetch-schedules.mjs
+      - run: node --experimental-strip-types scripts/build-timetable.mjs
       - name: 바뀐 데이터 커밋
         run: |
           git config user.name "github-actions[bot]"

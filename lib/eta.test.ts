@@ -34,6 +34,18 @@ test('환승: 두 번째 버스는 실시간이 있어도 시간표 기준', () 
   assert.deepEqual(r, { min: 52, source: 'timetable' });
 });
 
+test('시간표: 실시간이 없으면 시간표의 다음 버스, 환승도 시간표 우선', () => {
+  const r = arrivalMin({
+    legs: [
+      { walkBeforeMin: 5, timetableMin: [3, 12], intervalMin: 60, rideMin: 10 },
+      { walkBeforeMin: 2, timetableMin: [20, 40], intervalMin: 10, rideMin: 5 },
+    ],
+    walkAfterMin: 1,
+  })!;
+  // 12분 버스(3분 버스는 놓침) → 22분 하차 → 24분 환승 정류장 → 40분 버스 → 45분 → 46분 도착
+  assert.deepEqual(r, { min: 46, source: 'timetable' });
+});
+
 test('대기를 추정할 수 없으면 null', () => {
   assert.equal(arrivalMin({ legs: [{ walkBeforeMin: 2, rideMin: 10 }], walkAfterMin: 0 }), null);
 });

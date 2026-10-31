@@ -39,6 +39,8 @@ export function headwayMin(loc: { bus: boolean }[]): number | undefined {
 
 export type PlanResults = Record<string, number[] | { error: string }>;
 export type Headways = Record<string, number>;
+// 시간표: "노선:정류장" → 지금부터 몇 분 뒤 오는지 / 오늘 운행이 끝났으면 첫차 시각(자정부터 분)
+export type Schedules = { scheduled?: Record<string, number[]>; firstBus?: Record<string, number> };
 
 // 실시간으로 조회할 "노선:정류장" 쌍. 빠른 경로의 첫 버스 먼저, 그다음 환승 버스, 노선 max개까지.
 export function realtimeKeys(routes: Route[], max = 10): string[] {
@@ -49,13 +51,15 @@ export function realtimeKeys(routes: Route[], max = 10): string[] {
 }
 
 // 남은 정류장 수 → 첫 구간의 "몇 분 뒤 버스", 모든 구간의 배차 간격. 같은 구간을 달리는 노선(lane)이 여럿이면 합친다.
-export function applyRealtime(route: Route, results: PlanResults, headways: Headways = {}): Route {
+export function applyRealtime(route: Route, results: PlanResults, headways: Headways = {}, sched: Schedules = {}): Route {
   let noBusNow = false;
+  const keys = (ride: Route['rides'][number]) => ride.routeIds.map((id) => `${id}:${ride.stationId}`);
   const legs = route.candidate.legs.map((leg, i) => {
     const ride = route.rides[i];
-    // 여러 노선이 같은 구간을 다니면 합친 간격 = 1 / Σ(1/간격)
+    // 여러 노선이 같은 구간을 다니면 합친 간격 = 1 / Σ(1/간격), 시간표는 합쳐서 가까운 순
     const freq = ride.routeIds.reduce((s, id) => s + (headways[id] ? 1 / headways[id] : 0), 0);
-    const next = { ...leg, ...(freq ? { intervalMin: 1 / freq } : {}) };
+    const times = keys(ride).flatMap((k) => sched.scheduled?.[k] ?? []).sort((a, b) => a - b);
+    const next = { ...leg, ...(freq ? { intervalMin: 1 / freq } : {}), ...(times.length ? { timetableMin: times } : {}) };
     if (i > 0) return next;
     // 단순화: 이 구간의 정류장당 평균 소요(탑승 시간 ÷ 정류장 수)를 버스가 오는 길에도 씀, 신호·정차 편차는 무시
     const perStop = ride.stops > 0 && leg.rideMin > 0 ? leg.rideMin / ride.stops : MIN_PER_STOP;
@@ -64,7 +68,9 @@ export function applyRealtime(route: Route, results: PlanResults, headways: Head
     if (!mins.length && found.length) noBusNow = true;
     return mins.length ? { ...next, nextBusesMin: mins } : next;
   });
-  return { ...route, candidate: { ...route.candidate, legs }, ...(noBusNow ? { noBusNow } : {}) };
+  const firsts = keys(route.rides[0]).map((k) => sched.firstBus?.[k]).filter((v) => v !== undefined);
+  const firstBus = !legs[0].nextBusesMin && !legs[0].timetableMin && firsts.length ? Math.min(...firsts) : undefined;
+  return { ...route, candidate: { ...route.candidate, legs }, ...(noBusNow ? { noBusNow } : {}), ...(firstBus !== undefined ? { firstBus } : {}) };
 }
 
 // 서버가 찾은 직행 후보 → 화면 후보. ODsay에 같은 (노선, 정류장) 직행이 이미 있으면 뺀다.

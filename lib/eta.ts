@@ -4,7 +4,8 @@ import { BOARD_MARGIN_MIN } from './config.ts';
 export type BusLeg = {
   walkBeforeMin: number; // 이 정류장까지 걷는 시간 (첫 구간은 출발지에서, 환승은 앞 정류장에서)
   nextBusesMin?: number[]; // ① 실시간: 지금부터 몇 분 뒤 도착하는지 (가까운 순)
-  intervalMin?: number; // ② 배차 간격
+  timetableMin?: number[]; // ② 시간표: 지금부터 몇 분 뒤 이 정류장에 오는지 (가까운 순)
+  intervalMin?: number; // ③ 배차 간격 (시간표가 없을 때)
   rideMin: number;
 };
 export type Candidate = { legs: BusLeg[]; walkAfterMin: number };
@@ -18,11 +19,16 @@ export function arrivalMin(c: Candidate): { min: number; source: WaitSource } | 
     const atStop = t + leg.walkBeforeMin;
     // 환승 후 두 번째 버스부터는 항상 시간표 기준으로 계산한다.
     const buses = i === 0 ? (leg.nextBusesMin ?? []) : [];
-    const bus = buses.find((b) => b >= atStop + BOARD_MARGIN_MIN);
+    const canBoard = (b: number) => b >= atStop + BOARD_MARGIN_MIN;
+    const bus = buses.find(canBoard);
+    const scheduled = leg.timetableMin?.find(canBoard);
     let board: number;
     if (bus !== undefined) board = bus;
-    else if (leg.intervalMin) {
-      // 단순화: 시간표 대신 배차 간격의 절반을 대기로 씀, 정류장 시간표가 생기면 교체
+    else if (scheduled !== undefined) {
+      board = scheduled;
+      if (i === 0) source = 'timetable';
+    } else if (leg.intervalMin) {
+      // 단순화: 시간표가 없는 노선은 배차 간격의 절반을 대기로 씀
       board = atStop + leg.intervalMin / 2;
       if (i === 0) source = 'timetable';
     } else return null;

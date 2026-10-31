@@ -37,6 +37,10 @@ test('실시간 쌍과 분 변환: 두 노선을 합쳐 가까운 순, 정류장
   assert.deepEqual(r.candidate.legs[0].nextBusesMin, [6, 15]);
   assert.deepEqual(applyRealtime(route, { '405136501:405000153': { error: 'x' } }), route);
   assert.equal(applyRealtime(route, { '405136501:405000153': [] }).noBusNow, true);
+  // 시간표: 같은 구간 노선들의 시각을 합치고, 오늘 운행이 끝났으면 첫차 시각
+  const t = applyRealtime(route, {}, {}, { scheduled: { '405136501:405000153': [30, 10], '405146501:405000153': [20] } });
+  assert.deepEqual(t.candidate.legs[0].timetableMin, [10, 20, 30]);
+  assert.equal(applyRealtime(route, {}, {}, { scheduled: {}, firstBus: { '405136501:405000153': 350, '405146501:405000153': 340 } }).firstBus, 340);
 });
 
 test('직행 후보: ODsay에 이미 있는 노선·정류장은 빼고 후보로 바꾼다', () => {
