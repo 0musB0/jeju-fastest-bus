@@ -1,11 +1,12 @@
 import type { Candidate } from './eta.ts';
 import { WALK_M_PER_MIN } from './config.ts';
 
-export type Ride = { busNos: string[]; from: string; to: string; stops: number };
+// routeIds·stationId는 제주 BIS ID (ODsay의 busLocalBlID, startLocalStationID). 실시간 조회에 쓴다.
+export type Ride = { busNos: string[]; routeIds: string[]; stationId: string; from: string; to: string; stops: number };
 export type Route = { candidate: Candidate; rides: Ride[]; fare: number; odsayMin: number };
 export type Parsed = { ok: true; routes: Route[] } | { ok: false; reason: string };
 
-type Sub = { trafficType: number; sectionTime?: number; distance?: number; startName?: string; endName?: string; stationCount?: number; lane?: { busNo?: string }[] };
+type Sub = { trafficType: number; sectionTime?: number; distance?: number; startName?: string; endName?: string; stationCount?: number; startLocalStationID?: string; lane?: { busNo?: string; busLocalBlID?: string }[] };
 
 const walkMin = (s: Sub) => s.sectionTime || Math.round((s.distance ?? 0) / WALK_M_PER_MIN);
 
@@ -31,7 +32,8 @@ export function parseOdsay(body: unknown): Parsed {
       if (s.trafficType === 3) walk += walkMin(s);
       else if (s.trafficType === 2) {
         legs.push({ walkBeforeMin: walk, rideMin: s.sectionTime ?? 0 });
-        rides.push({ busNos: (s.lane ?? []).map((l) => l.busNo ?? '?'), from: s.startName ?? '', to: s.endName ?? '', stops: s.stationCount ?? 0 });
+        const lanes = s.lane ?? [];
+        rides.push({ busNos: lanes.map((l) => l.busNo ?? '?'), routeIds: lanes.map((l) => String(l.busLocalBlID ?? '')), stationId: String(s.startLocalStationID ?? ''), from: s.startName ?? '', to: s.endName ?? '', stops: s.stationCount ?? 0 });
         walk = 0;
       }
     }

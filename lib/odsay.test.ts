@@ -6,13 +6,15 @@ test('ODsay 경로를 걷기·버스 구간으로 바꾼다', () => {
   const r = parseOdsay({
     result: { path: [{ info: { payment: 1150, totalTime: 20 }, subPath: [
       { trafficType: 3, sectionTime: 4 },
-      { trafficType: 2, sectionTime: 12, startName: '제주국제공항', endName: '제주시청', stationCount: 4, lane: [{ busNo: '365' }, { busNo: '465' }] },
+      { trafficType: 2, sectionTime: 12, startName: '제주국제공항', endName: '제주시청', stationCount: 4, startLocalStationID: '405000153', lane: [{ busNo: '365', busLocalBlID: '405136501' }, { busNo: '465' }] },
       { trafficType: 3, sectionTime: 0, distance: 140 },
     ] }] },
   });
   assert.ok(r.ok);
   assert.deepEqual(r.routes[0].candidate, { legs: [{ walkBeforeMin: 4, rideMin: 12 }], walkAfterMin: 2 });
   assert.deepEqual(r.routes[0].rides[0].busNos, ['365', '465']);
+  assert.deepEqual(r.routes[0].rides[0].routeIds, ['405136501', '']);
+  assert.equal(r.routes[0].rides[0].stationId, '405000153');
   assert.equal(r.routes[0].fare, 1150);
 });
 

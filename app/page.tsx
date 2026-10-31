@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react';
 import { arrivalMin, kstClock } from '@/lib/eta';
 import { parseOdsay, type Route } from '@/lib/odsay';
+import { applyRealtime, realtimeKeys, type PlanResults } from '@/lib/realtime';
 
 type Place = { name: string; address?: string; lat: number; lng: number };
 type Ranked = Route & { eta: ReturnType<typeof arrivalMin> };
@@ -79,8 +80,18 @@ export default function Home() {
       })}`).then((r) => r.json());
       const parsed = parseOdsay(body);
       if (!parsed.ok) return setMsg(parsed.reason === '경로 없음' ? '버스로 가는 경로가 없어요. 걸어가기 가까운 거리일 수 있어요.' : parsed.reason);
+      // 실시간 버스 위치로 첫 버스 대기를 채운다. 실패하면 대기 추정 불가로 둔다.
+      const byTime = [...parsed.routes].sort((a, b) => a.odsayMin - b.odsayMin);
+      const keys = realtimeKeys(byTime);
+      let results: PlanResults = {};
+      if (keys.length) {
+        try {
+          results = (await fetch(`/api/plan?q=${keys.join(',')}`).then((r) => r.json())).results ?? {};
+        } catch { /* 실시간 실패: 아래에서 추정 불가로 표시 */ }
+      }
       // 대기를 알 수 있는 후보가 먼저, 그 안에서 도착이 빠른 순. 모르면 이동 시간 순으로 맨 뒤.
-      const ranked = parsed.routes
+      const ranked = byTime
+        .map((r) => applyRealtime(r, results))
         .map((r) => ({ ...r, eta: arrivalMin(r.candidate) }))
         .sort((a, b) => (a.eta ? 0 : 1) - (b.eta ? 0 : 1) || (a.eta?.min ?? a.odsayMin) - (b.eta?.min ?? b.odsayMin));
       setRoutes(ranked.slice(0, 3));
@@ -116,13 +127,14 @@ export default function Home() {
           return (
             <li key={i} style={{ marginBottom: 16 }}>
               {r.eta ? (
-                <b>{kstClock(at!, r.eta.min)} 도착 ({r.eta.min}분) · {SOURCE_LABEL[r.eta.source]}</b>
+                <b>{kstClock(at!, r.eta.min)} 도착 ({Math.round(r.eta.min)}분 뒤) · {SOURCE_LABEL[r.eta.source]}</b>
               ) : (
-                <b>이동 {r.odsayMin}분 + 대기 · 버스 대기 시간 추정 불가</b>
+                <b>이동 {r.odsayMin}분 + 대기 · 지금 오는 버스 없음 또는 대기 추정 불가</b>
               )}
               {r.rides.map((x, j) => (
                 <div key={j}>
                   {j > 0 && '환승 → '}<b>{x.busNos.join(', ')}번</b> {x.from} 승차 → {x.to} 하차 ({x.stops}정류장)
+                  {j === 0 && r.candidate.legs[0].nextBusesMin && <> · 다음 버스 {Math.round(r.candidate.legs[0].nextBusesMin[0])}분 뒤</>}
                 </div>
               ))}
               <small style={{ color: '#666' }}>걷기 {walk}분 · 요금 {r.fare.toLocaleString()}원</small>
