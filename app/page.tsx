@@ -10,7 +10,7 @@ type Ranked = Route & { eta: ReturnType<typeof arrivalMin> };
 
 const ODSAY_KEY = process.env.NEXT_PUBLIC_ODSAY_KEY ?? '';
 // 도착 칸 안내 문구: 제주말로 3초마다 바뀐다
-const ASKS = ['어디 감수꽈?', '어드레 가카마씸?', '오늘은 또 어드레 감서?'];
+const ASKS = ['어디 감수꽈?', '어드레 가카마씸?', '오늘은 어드레 감서?'];
 const SOURCE_LABEL = { realtime: '실시간', timetable: '배차 간격 추정', unknown: '' } as const;
 
 function PlacePicker({ label, value, onPick, allowHere }: { label: string; value: Place | null; onPick: (p: Place | null) => void; allowHere?: boolean }) {
