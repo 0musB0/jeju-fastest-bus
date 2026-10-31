@@ -1,6 +1,6 @@
 import { revalidateTag } from 'next/cache';
 import { headwayMin, parseBusLocation, stopsAway } from '@/lib/realtime';
-import { findTrips, indexData, type Station, type BusRoute, type RideMin } from '@/lib/direct';
+import { findTrips, indexData, roughRide, type Station, type BusRoute, type RideMin } from '@/lib/direct';
 import stationList from '@/data/stations.json';
 import routeList from '@/data/routes.json';
 import timetableData from '@/data/timetable.json';
@@ -15,11 +15,11 @@ const stationIds = new Set(stations.map((s) => s.id));
 const routeById = new Map(routes.map((r) => [r.id, r]));
 const timetable = timetableData as Timetable;
 const index = indexData(stations, routes);
-// 탑승 시간: 시간표의 정류장 간 소요, 없으면 정류장 수 × 평균 소요
+// 탑승 시간: 시간표의 정류장 간 소요, 없으면 정류장 수 × 평균 소요(정류장이 드문 노선은 거리로)
 const rideMin: RideMin = (r, i, j) => {
   const e = timetable[r.id];
   const m = e ? offsetAt(e.p, j) - offsetAt(e.p, i) : 0;
-  return Math.round(m > 0 ? m : (j - i) * MIN_PER_STOP);
+  return Math.round(m > 0 ? m : roughRide(index, r, i, j));
 };
 const ID = /^\d{9}$/;
 const MAX_ROUTES = 10; // 실시간 조회 노선 수

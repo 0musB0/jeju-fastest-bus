@@ -37,57 +37,111 @@ export function indexData(stations: Station[], routes: BusRoute[]) {
     if (mk) memo.set(mk, out);
     return out;
   };
-  return { byId, onStation, near };
+  // 노선별 누적 거리 (정류장 사이 직선 합)
+  const cum = new Map(routes.map((r) => {
+    const c = [0];
+    for (let k = 1; k < r.stops.length; k++) { const a = byId.get(r.stops[k - 1]), b = byId.get(r.stops[k]); c.push(c[k - 1] + (a && b ? distM(a, b) : 0)); }
+    return [r.id, c];
+  }));
+  return { byId, onStation, near, cum };
 }
 export type Index = ReturnType<typeof indexData>;
 
+// 노선 i → j 정류장 사이 거리(m, 정류장을 이은 직선 합)
+export const routeDist = (ix: Index, r: BusRoute, i: number, j: number) => { const c = ix.cum.get(r.id)!; return c[j] - c[i]; };
+// 시간표가 없을 때: 정류장 수 × 평균 소요, 단 정류장이 드문 급행은 거리로 (시속 약 27km)
+export const roughRide = (ix: Index, r: BusRoute, i: number, j: number) => Math.max((j - i) * MIN_PER_STOP, routeDist(ix, r, i, j) / 450);
 const defaultRide: RideMin = (_r, i, j) => (j - i) * MIN_PER_STOP;
 
 function leg(ix: Index, r: BusRoute, i: number, j: number, walkBeforeMin: number, ride: RideMin): TripLeg {
   const s = ix.byId.get(r.stops[i])!, e = ix.byId.get(r.stops[j])!;
   const path = r.stops.slice(i, j + 1).flatMap((id) => { const p = ix.byId.get(id); return p ? [{ lat: p.lat, lng: p.lng }] : []; });
-  const d = path.reduce((sum, p, k) => (k ? sum + distM(path[k - 1], p) : 0), 0);
+  const d = routeDist(ix, r, i, j);
   return { routeIds: [r.id], nos: [r.no], fromId: s.id, fromName: s.name, toName: e.name, stops: j - i, walkBeforeMin, rideMin: ride(r, i, j), distM: d, fromPt: { lat: s.lat, lng: s.lng }, toPt: { lat: e.lat, lng: e.lng }, path };
 }
 
-// 출발지 600m 안 정류장 → (환승 정류장 200m 안 갈아타기 1번까지) → 목적지 600m 안 정류장.
+type Seg = { r: BusRoute; m: number; j: number }; // 노선 r의 m번째에서 타서 j번째에서 내림
+type Tail = { cost: number; segs: Seg[] }; // 어떤 정류장에서 목적지까지: 탈 구간들과 비용(탑승·환승 걷기·대기 어림·마지막 걷기)
+
+// 출발지 600m 안 정류장 → (환승 정류장 200m 안 갈아타기 2번까지) → 목적지 600m 안 정류장.
+// 목적지 쪽에서 거꾸로 "이 정류장에서 몇 번 타면 닿는지"(tails)를 만든 뒤, 출발지에서 첫 버스를 타고 내릴 곳마다 이어 본다.
 // 순위용 비용 = 걷기 + 탑승 + 환승 걷기 + 환승 대기 어림값. 실제 대기는 화면에서 실시간·시간표로 다시 계산한다.
-// ponytail: 요청마다 전체를 훑어 0.3~0.7초 걸림. 느려지면 노선 쌍 환승표를 미리 만들어 둔다.
-// 단순화: 환승은 1번까지만 (제주는 대부분 1번이면 닿음). 2번 환승이 필요한 곳은 ODsay 결과에 기댄다.
+// ponytail: 요청마다 전체를 훑어 0.2~0.7초. 느려지면 노선 쌍 환승표를 미리 만들어 둔다.
 export function findTrips(from: Pt, to: Pt, ix: Index, ride: RideMin = defaultRide, max = 8): Trip[] {
-  const starts = ix.near(from, NEAR_STOP_M), ends = new Set(ix.near(to, NEAR_STOP_M).map((s) => s.id));
+  const starts = ix.near(from, NEAR_STOP_M).filter((s) => !s.name.includes('하차전용'));
+  const endList = ix.near(to, NEAR_STOP_M), ends = new Set(endList.map((s) => s.id));
   if (!starts.length || !ends.size) return [];
   const startIds = new Set(starts.map((s) => s.id));
-  const firstEnd = (r: BusRoute, after: number) => { for (let j = after + 1; j < r.stops.length; j++) if (ends.has(r.stops[j])) return j; return -1; };
-  const after = (j: number, r: BusRoute) => walkMin(ix.byId.get(r.stops[j])!, to);
-  const best = new Map<string, Trip>(); // 같은 버스 번호 조합은 가장 빠른 것 하나
-  const keep = (key: string, t: Trip) => { const o = best.get(key); if (!o || t.cost < o.cost) best.set(key, t); };
+  const pt = (id: string) => ix.byId.get(id)!;
+  const bMemo = new Map<string, boolean>();
+  const boardable = (id: string) => bMemo.get(id) ?? bMemo.set(id, boardable0(id)).get(id)!;
+  const boardable0 = (id: string) => { const p = ix.byId.get(id); return !!p && !p.name.includes('하차전용') && distM(from, p) > NEAR_STOP_M; }; // 출발지에서 걸어갈 수 있으면 처음부터 거기서 탄다
+  const firstStart = new Map<string, number>(); // 노선에서 출발지 근처 정류장이 처음 나오는 순번
+  const passesStart = (r: BusRoute, m: number) => {
+    if (!firstStart.has(r.id)) firstStart.set(r.id, r.stops.findIndex((id) => startIds.has(id)));
+    const f = firstStart.get(r.id)!;
+    return f >= 0 && f < m;
+  }; // 출발지 근처에서 바로 탈 수 있는 노선
+  // 정류장마다 노선 번호별 가장 좋은 tail
+  // 비교 먼저, 더 좋을 때만 객체를 만든다 (여기가 가장 많이 도는 곳)
+  const put = (map: Map<string, Map<string, Tail>>, id: string, r: BusRoute, cost: number, segs: () => Seg[]) => {
+    let byBase = map.get(id);
+    if (!byBase) map.set(id, (byBase = new Map()));
+    const k = base(r.no);
+    if ((byBase.get(k)?.cost ?? Infinity) > cost) byBase.set(k, { cost, segs: segs() });
+  };
 
+  // 버스 한 번으로 목적지까지
+  const t1 = new Map<string, Map<string, Tail>>();
+  for (const e of endList) for (const [r, j] of ix.onStation.get(e.id) ?? []) {
+    const wa = walkMin(e, to);
+    for (let m = 0; m < j; m++) if (!ends.has(r.stops[m]) && boardable(r.stops[m]) && !passesStart(r, m)) put(t1, r.stops[m], r, ride(r, m, j) + wa, () => [{ r, m, j }]);
+  }
+  // 버스 두 번으로 목적지까지: 노선 b의 n번째에서 내려 근처 정류장의 t1로 갈아탄다
+  const t2 = new Map<string, Map<string, Tail>>();
+  const via = new Map<string, { cost: number; tail: Tail; walk: number }[]>(); // 내릴 정류장 → 이어 탈 수 있는 t1들
+  for (const [x, byBase] of t1) for (const y of ix.near(pt(x), TRANSFER_M)) {
+    const w = walkMin(y, pt(x));
+    for (const tail of byBase.values()) via.set(y.id, [...(via.get(y.id) ?? []), { cost: w + TRANSFER_PENALTY_MIN + tail.cost, tail, walk: w }]);
+  }
+  for (const [y, opts] of via) {
+    opts.sort((p, q) => p.cost - q.cost);
+    for (const [b, n] of ix.onStation.get(y) ?? []) {
+      const opt = opts.find((o) => base(o.tail.segs[0].r.no) !== base(b.no));
+      if (!opt) continue;
+      for (let m = 0; m < n; m++) if (boardable(b.stops[m]) && !passesStart(b, m)) put(t2, b.stops[m], b, ride(b, m, n) + opt.cost, () => [{ r: b, m, j: n }, ...opt.tail.segs]);
+    }
+  }
+
+  const best = new Map<string, Trip>(); // 같은 버스 번호 조합은 가장 빠른 것 하나
+  const build = (segs: Seg[], w0: number, cost: number): Trip => {
+    const legs = segs.map((g, n) => leg(ix, g.r, g.m, g.j, n ? walkMin(pt(segs[n - 1].r.stops[segs[n - 1].j]), pt(g.r.stops[g.m])) : w0, ride));
+    return { legs, walkAfterMin: walkMin(pt(segs.at(-1)!.r.stops[segs.at(-1)!.j]), to), cost };
+  };
+  const keep = (segs: Seg[], w0: number, cost: number) => {
+    const key = segs.map((g) => base(g.r.no)).join('>');
+    if ((best.get(key)?.cost ?? Infinity) > cost) best.set(key, build(segs, w0, cost));
+  };
   for (const s of starts) {
     const w0 = walkMin(from, s);
-    if (s.name.includes('하차전용')) continue;
     for (const [a, i] of ix.onStation.get(s.id) ?? []) {
-      const j0 = firstEnd(a, i);
-      if (j0 > 0) {
-        const l = leg(ix, a, i, j0, w0, ride), wa = after(j0, a);
-        keep(base(a.no), { legs: [l], walkAfterMin: wa, cost: w0 + l.rideMin + wa });
+      let last = a.stops.length;
+      for (let j = i + 1; j < a.stops.length; j++) if (ends.has(a.stops[j])) {
+        keep([{ r: a, m: i, j }], w0, w0 + ride(a, i, j) + walkMin(pt(a.stops[j]), to));
+        last = j; // 목적지 근처에 닿기 전의 정류장에서만 갈아탄다
+        break;
       }
-      // 목적지 근처에 닿기 전의 정류장에서만 갈아탄다
-      const last = j0 > 0 ? j0 : a.stops.length;
       for (let k = i + 1; k < last; k++) {
         const ks = ix.byId.get(a.stops[k]);
         if (!ks) continue;
+        const rideA = ride(a, i, k);
         for (const t of ix.near(ks, TRANSFER_M)) {
-          if (distM(from, t) <= NEAR_STOP_M || t.name.includes('하차전용')) continue; // 출발지에서 걸어갈 수 있는 정류장이면 처음부터 거기서 타는 게 낫다
-          for (const [b, m] of ix.onStation.get(t.id) ?? []) {
-            if (base(b.no) === base(a.no) || b.stops.slice(0, m).some((id) => startIds.has(id))) continue; // b를 출발지 근처에서 바로 탈 수 있으면 환승할 이유가 없다
-            const j = firstEnd(b, m);
-            if (j < 0) continue;
-            const key = `${base(a.no)}>${base(b.no)}`;
-            const rideA = ride(a, i, k), wt = walkMin(ks, t), rideB = ride(b, m, j), wa = after(j, b);
-            const cost = w0 + rideA + wt + TRANSFER_PENALTY_MIN + rideB + wa;
-            if ((best.get(key)?.cost ?? Infinity) <= cost) continue;
-            keep(key, { legs: [leg(ix, a, i, k, w0, ride), leg(ix, b, m, j, wt, ride)], walkAfterMin: wa, cost });
+          const wt = walkMin(ks, t);
+          // 출발지에서 그 정류장까지 그냥 걷는 게 더 빠르면 짧게 타고 갈아타는 건 의미가 없다
+          if (walkMin(from, t) <= w0 + rideA + wt + TRANSFER_PENALTY_MIN) continue;
+          for (const tails of [t1.get(t.id), t2.get(t.id)]) for (const tail of tails?.values() ?? []) {
+            if (tail.segs.some((g) => base(g.r.no) === base(a.no))) continue;
+            keep([{ r: a, m: i, j: k }, ...tail.segs], w0, w0 + rideA + wt + TRANSFER_PENALTY_MIN + tail.cost);
           }
         }
       }

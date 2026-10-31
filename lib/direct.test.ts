@@ -37,3 +37,15 @@ test('한 번 환승: 출발지 근처에서 바로 탈 수 없는 노선으로�
   // 400번은 출발지에서 바로 타면 되므로 환승 2번째 버스로 쓰지 않는다
   assert.ok(!transfers.some((t) => t[1].startsWith('4')));
 });
+
+test('두 번 환승: 한 번으로 안 닿으면 세 노선을 잇는다', () => {
+  const s = (id: string, lat: number) => ({ id, name: id, lat, lng: 126.5 });
+  const st3 = [s('A', 33.5), s('P', 33.518), s('Q', 33.536), s('E', 33.554)];
+  const routes = [
+    { id: '1', no: '100', to: '', stops: ['A', 'P'] },
+    { id: '2', no: '200', to: '', stops: ['P', 'Q'] },
+    { id: '3', no: '300', to: '', stops: ['Q', 'E'] },
+  ];
+  const r = findTrips({ lat: 33.5, lng: 126.5 }, { lat: 33.554, lng: 126.5 }, indexData(st3, routes));
+  assert.deepEqual(r.map((t) => t.legs.map((l) => `${l.nos[0]}@${l.fromId}`)), [['100@A', '200@P', '300@Q']]);
+});
