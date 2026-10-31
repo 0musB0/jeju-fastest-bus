@@ -1,11 +1,23 @@
 import { MIN_PER_STOP } from './config.ts';
 // 시간표: bus.jeju.go.kr의 표(주요 정류장 몇 곳의 시각)를 BIS 노선(ID)별로 바꾸고, 정류장 도착 시각을 계산한다. 외부 호출 없음.
-// 단순화: 평일·주말 구분 없이 하나의 시간표를 씀 (사이트 표가 대부분 요일 구분이 없음). 동절기 대체 행은 무시함.
+// 요일: 표 제목("평일", "토·공휴일")과 행 비고("토,공휴일 운행 안함", "…(평일)")로 운행마다 요일을 붙인다. 나머지는 매일 운행으로 봄. 동절기 대체 행은 무시함.
 
 // 노선별: p = [정류장 순번, 기준 정류장부터 걸리는 분, ...], t = 운행마다 기준 정류장 출발 시각(자정부터 분, 24시 넘으면 1440+)
-export type Entry = { p: number[]; t: number[] };
+// m = 운행마다 요일 (1 평일, 2 토요일, 4 일요일·공휴일 비트, 없으면 매일)
+export type Entry = { p: number[]; t: number[]; m?: number[] };
 export type Timetable = Record<string, Entry>;
-export type Tab = { cols: string[]; rows: string[][] }; // "노선번호" 열이 있는 표도 있고 없는 표도 있다
+export type Tab = { cols: string[]; rows: string[][]; way?: string }; // "노선번호" 열이 있는 표도 있고 없는 표도 있다
+export type Trip = [number, number][] & { m?: number }; // [순번, 시각] 기준점들, m = 요일
+export const EVERY_DAY = 7, WEEKDAY = 1;
+
+// 표 제목·행 글자 → 요일 비트
+function dayMask(way: string, row: string[]): number {
+  const w = way.replace(/<[^>]*>/g, '');
+  let m = /평일/.test(w) ? WEEKDAY : /토|공휴|휴일|주말/.test(w) ? 6 : EVERY_DAY;
+  const notes = row.join(' ').replace(/<[^>]*>/g, ' ');
+  if (/(토|휴일|주말)[^\d]*(운행\s*안\s*함|미운행)/.test(notes) || /\(평일\)/.test(notes)) m &= WEEKDAY;
+  return m || EVERY_DAY;
+}
 
 export function parseTime(cell: string): number | null {
   const m = cell.match(/^(\d{1,2}):(\d{2})/);
@@ -36,11 +48,11 @@ export function sameStop(col: string, stop: string): boolean {
 // 표의 각 행 중 이 노선(정류장 이름 순서)의 운행인 것만 골라 [순번, 시각] 기준점 목록으로.
 // 노선에 없는 이름의 시각은 건너뛴다: BIS 노선이 표의 노선을 토막 낸 것이 많고, 표의 이름이 줄임말("제주여중고")이라 못 맞추는 곳도 있다.
 // 기준점이 노선 길이의 절반 이상을 덮고, 노선에 있는 정류장을 X(안 감)로 표시하지 않아야 한다.
-export function tripsFor(tab: Tab, stops: string[]): [number, number][][] {
+export function tripsFor(tab: Tab, stops: string[]): Trip[] {
   const cand: (number[] | null)[] = tab.cols.map((c) => (/노선번호|구분|비\s*고/.test(c) || !c ? null : stops.flatMap((s, o) => (sameStop(c, s) ? [o] : []))));
-  const trips: [number, number][][] = [];
+  const trips: Trip[] = [];
   for (const row of tab.rows) {
-    const anchors: [number, number][] = [];
+    const anchors: Trip = [];
     let prevOrd = -1, prevMin = -1;
     for (let j = 0; j < row.length; j++) {
       if (!cand[j]) continue;
@@ -56,6 +68,8 @@ export function tripsFor(tab: Tab, stops: string[]): [number, number][][] {
     if (hi - lo < stops.length / 2) continue;
     // X(안 감)인 정류장이 노선에 있으면 다른 변형(일찍 끝나거나 늦게 시작)의 운행이다
     const skipped = row.some((v, j) => v === 'X' && cand[j]?.length);
+    const m = dayMask(tab.way ?? '', row);
+    if (m !== EVERY_DAY) anchors.m = m;
     if (!skipped) trips.push(anchors);
   }
   return trips;
@@ -74,7 +88,7 @@ export function offsetAt(p: number[], ord: number): number {
 const median = (a: number[]) => [...a].sort((x, y) => x - y)[Math.floor(a.length / 2)];
 
 // 운행 목록 → 노선 하나의 시간표. 가장 흔한 출발 순번을 기준으로 정류장별 소요의 중앙값을 쓴다.
-export function buildEntry(trips: [number, number][][]): Entry | null {
+export function buildEntry(trips: Trip[]): Entry | null {
   if (!trips.length) return null;
   const firsts = trips.map((t) => t[0][0]);
   const count = (f: number) => firsts.filter((g) => g === f).length;
@@ -85,21 +99,45 @@ export function buildEntry(trips: [number, number][][]): Entry | null {
   // 이름을 잘못 맞춘 노선 거르기: 소요가 거꾸로 가거나 정류장당 0.5~6분(도심급행은 정류장이 드물어 4분을 넘음)을 벗어나면 버린다
   const n = p.length / 2, rate = (p[2 * n - 1] - p[1]) / (p[2 * n - 2] - p[0] || 1);
   if (n < 2 || rate < 0.5 || rate > 6 || p.some((v, i) => i % 2 === 1 && i > 1 && v < p[i - 2])) return null;
-  const t = [...new Set(trips.map((tr) => Math.round(tr[0][1] - offsetAt(p, tr[0][0]))))].sort((a, b) => a - b);
-  return { p, t };
+  // 같은 시각 운행은 요일을 합친다
+  const byTime = new Map<number, number>();
+  for (const tr of trips) { const k = Math.round(tr[0][1] - offsetAt(p, tr[0][0])); byTime.set(k, (byTime.get(k) ?? 0) | (tr.m ?? EVERY_DAY)); }
+  const t = [...byTime.keys()].sort((a, b) => a - b), m = t.map((k) => byTime.get(k)!);
+  return m.every((x) => x === EVERY_DAY) ? { p, t } : { p, t, m };
 }
 
 // 지금(자정부터 분, KST)부터 horizon분 안에 이 정류장에 오는 버스들: 지금부터 몇 분 뒤인지
-export function arrivals(e: Entry, ord: number, nowMin: number, horizon = 180): number[] {
+// day = 오늘 요일 비트. 단순화: 어제 출발해 자정을 넘긴 운행과 내일 운행도 오늘 요일로 거름.
+export function arrivals(e: Entry, ord: number, nowMin: number, horizon = 180, day = EVERY_DAY): number[] {
   const off = offsetAt(e.p, ord);
   return e.t
+    .filter((_, i) => ((e.m?.[i] ?? EVERY_DAY) & day) !== 0)
     .flatMap((t) => [t - 1440, t, t + 1440].map((d) => d + off - nowMin))
     .filter((m) => m >= 0 && m <= horizon)
     .sort((a, b) => a - b);
 }
 
 // 이 정류장 첫차 시각 (자정부터 분)
-export const firstAt = (e: Entry, ord: number) => ((Math.round(Math.min(...e.t) + offsetAt(e.p, ord)) % 1440) + 1440) % 1440;
+export function firstAt(e: Entry, ord: number, day = EVERY_DAY): number | undefined {
+  const ts = e.t.filter((_, i) => ((e.m?.[i] ?? EVERY_DAY) & day) !== 0);
+  return ts.length ? ((Math.round(Math.min(...ts) + offsetAt(e.p, ord)) % 1440) + 1440) % 1440 : undefined;
+}
+
+// 공휴일 (대체공휴일 포함). 매년 말에 다음 해를 더한다.
+// ponytail: 손으로 적은 목록, 해가 바뀌면 갱신 필요 (공공 API는 data.go.kr 가입이 필요해 못 씀)
+const HOLIDAYS = new Set([
+  '2026-01-01', '2026-02-16', '2026-02-17', '2026-02-18', '2026-03-02', '2026-05-05', '2026-05-25', '2026-06-03', '2026-08-17',
+  '2026-09-24', '2026-09-25', '2026-09-28', '2026-10-05', '2026-10-09', '2026-12-25',
+  '2027-01-01', '2027-02-08', '2027-02-09', '2027-03-01', '2027-05-05', '2027-05-13', '2027-08-16', '2027-09-14', '2027-09-15',
+  '2027-09-16', '2027-10-04', '2027-10-11', '2027-12-27',
+]);
+// KST 기준 요일 비트 (plusDays = 내일이면 1)
+export function kstDay(now: Date, plusDays = 0): number {
+  const d = new Date(now.getTime() + plusDays * 86_400_000);
+  const ymd = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul' }).format(d);
+  const wd = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Seoul', weekday: 'short' }).format(d);
+  return HOLIDAYS.has(ymd) || wd === 'Sun' ? 4 : wd === 'Sat' ? 2 : WEEKDAY;
+}
 
 // KST 지금 = 자정부터 몇 분
 export function kstMinutes(now: Date): number {

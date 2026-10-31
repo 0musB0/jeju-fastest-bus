@@ -5,7 +5,7 @@ import shapeData from '@/data/shapes.json';
 import stationList from '@/data/stations.json';
 import routeList from '@/data/routes.json';
 import timetableData from '@/data/timetable.json';
-import { arrivals, firstAt, kstMinutes, offsetAt, type Timetable } from '@/lib/timetable';
+import { arrivals, firstAt, kstDay, kstMinutes, offsetAt, type Timetable } from '@/lib/timetable';
 import { MIN_PER_STOP } from '@/lib/config';
 
 // 실시간: 노선별 버스 위치 → 우리 정류장까지 남은 정류장 수. 우리 데이터로 경로 후보(직행·환승 1번)도 여기서 찾는다.
@@ -80,14 +80,18 @@ export async function GET(req: Request) {
     if (h) headways[r] = h;
   }
   // 시간표 (KST 기준): 앞으로 3시간 안에 오는 버스, 없으면 첫차 시각
-  const now = kstMinutes(new Date());
+  const date = new Date(), now = kstMinutes(date), today = kstDay(date);
+  const nextDay = now >= 720 ? kstDay(date, 1) : today; // 막차 뒤 첫차는 오후면 내일 요일로
   const scheduled: Record<string, number[]> = {}, firstBus: Record<string, number> = {};
   for (const [r, s] of [...pairs, ...tripFirst, ...tripLater]) {
     const e = timetable[r], ord = routeById.get(r)?.stops.indexOf(s) ?? -1;
     if (!e || ord < 0) continue;
-    const a = arrivals(e, ord, now);
+    const a = arrivals(e, ord, now, 180, today);
     if (a.length) scheduled[`${r}:${s}`] = a;
-    else firstBus[`${r}:${s}`] = firstAt(e, ord);
+    else {
+      const f = firstAt(e, ord, nextDay);
+      if (f !== undefined) firstBus[`${r}:${s}`] = f;
+    }
   }
   // ODsay 경로의 지도 선: "노선:탈 정류장:정류장 수" → 노선 모양 조각 (최대 30개)
   const paths: Record<string, { lat: number; lng: number }[]> = {};

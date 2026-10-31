@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { arrivals, buildEntry, firstAt, kstMinutes, parseTime, sameStop, tripsFor } from './timetable.ts';
+import { arrivals, buildEntry, firstAt, kstDay, kstMinutes, parseTime, sameStop, tripsFor } from './timetable.ts';
 
 test('시각 칸 읽기', () => {
   assert.equal(parseTime('5:50(출발)'), 350);
@@ -62,4 +62,21 @@ test('자정 넘김: 23:50 출발 운행은 00:10에 20분 뒤가 아니라 이�
 
 test('KST 분: UTC 15:10은 KST 00:10', () => {
   assert.equal(kstMinutes(new Date('2026-10-31T15:10:00Z')), 10);
+});
+
+test('요일: "토,공휴일 운행 안함" 행은 평일만, 평일 표는 평일만', () => {
+  const t2 = { cols: ['제주버스터미널(노형로 방향)', '절물', '비고'], rows: [['06:00', '06:40', ''], ['07:00', '07:40', '토,공휴일<br>운행 안함']] };
+  const s2 = ['제주버스터미널(노형로 방향)', ...Array.from({ length: 19 }, (_, i) => `x${i}`), '절물'];
+  const e = buildEntry(tripsFor(t2, s2))!;
+  assert.deepEqual(e.m, [7, 1]);
+  assert.deepEqual(arrivals(e, 0, 300, 180, 1), [60, 120]); // 평일
+  assert.deepEqual(arrivals(e, 0, 300, 180, 2), [60]); // 토요일
+  assert.equal(buildEntry(tripsFor({ ...t2, way: '785 한림 → 한경<br>(토·공휴일)' }, s2))!.m?.[0], 6);
+});
+
+test('KST 요일: 토요일 2, 일요일·공휴일 4, 평일 1', () => {
+  assert.equal(kstDay(new Date('2026-10-31T03:00:00Z')), 2);
+  assert.equal(kstDay(new Date('2026-10-31T16:00:00Z')), 4); // KST 11/1 일요일 01시
+  assert.equal(kstDay(new Date('2026-12-25T03:00:00Z')), 4);
+  assert.equal(kstDay(new Date('2026-10-31T03:00:00Z'), 2), 1); // 월요일
 });
