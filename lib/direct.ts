@@ -2,8 +2,8 @@ import { NEAR_STOP_M, WALK_DETOUR, WALK_M_PER_MIN, MIN_PER_STOP } from './config
 
 export type Station = { id: string; name: string; lat: number; lng: number };
 export type BusRoute = { id: string; no: string; to: string; stops: string[] };
-type Pt = { lat: number; lng: number };
-export type Direct = { routeId: string; no: string; heading: string; fromId: string; fromName: string; toName: string; stops: number; walkBeforeMin: number; walkAfterMin: number };
+export type Pt = { lat: number; lng: number };
+export type Direct = { routeId: string; no: string; heading: string; fromId: string; fromName: string; toName: string; stops: number; walkBeforeMin: number; walkAfterMin: number; fromPt: Pt; toPt: Pt };
 
 export function distM(a: Pt, b: Pt): number {
   const R = 6371000, rad = Math.PI / 180;
@@ -27,7 +27,7 @@ export function directCandidates(from: Pt, to: Pt, stations: Station[], routes: 
       for (let j = i + 1; j < r.stops.length; j++) {
         const e = ends.get(r.stops[j]);
         if (!e) continue;
-        const d: Direct = { routeId: r.id, no: r.no, heading: r.to, fromId: s.id, fromName: s.name, toName: e.name, stops: j - i, walkBeforeMin: walkMin(from, s), walkAfterMin: walkMin(e, to) };
+        const d: Direct = { routeId: r.id, no: r.no, heading: r.to, fromId: s.id, fromName: s.name, toName: e.name, stops: j - i, walkBeforeMin: walkMin(from, s), walkAfterMin: walkMin(e, to), fromPt: { lat: s.lat, lng: s.lng }, toPt: { lat: e.lat, lng: e.lng } };
         // 단순화: 시간표가 없어 탑승 시간을 정류장 수 × 평균 소요로 잡음
         const cost = d.walkBeforeMin + d.stops * MIN_PER_STOP + d.walkAfterMin;
         if (!best || cost < best.cost) best = { ...d, cost };

@@ -2,13 +2,15 @@ import type { Candidate } from './eta.ts';
 import { WALK_M_PER_MIN } from './config.ts';
 
 // routeIds·stationId는 제주 BIS ID (ODsay의 busLocalBlID, startLocalStationID). 실시간 조회에 쓴다.
-export type Ride = { busNos: string[]; routeIds: string[]; stationId: string; from: string; to: string; stops: number };
+export type Pt = { lat: number; lng: number };
+export type Ride = { busNos: string[]; routeIds: string[]; stationId: string; from: string; to: string; stops: number; fromPt?: Pt; toPt?: Pt };
 // fare 0 = 요금 모름 (직행 후보). noBusNow = 실시간 조회는 됐는데 오는 버스가 없음.
 export type Route = { candidate: Candidate; rides: Ride[]; fare: number; odsayMin: number; noBusNow?: boolean };
 export type Parsed = { ok: true; routes: Route[] } | { ok: false; reason: string };
 
-type Sub = { trafficType: number; sectionTime?: number; distance?: number; startName?: string; endName?: string; stationCount?: number; startLocalStationID?: string; lane?: { busNo?: string; busLocalBlID?: string }[] };
+type Sub = { trafficType: number; sectionTime?: number; distance?: number; startName?: string; endName?: string; stationCount?: number; startLocalStationID?: string; startX?: number; startY?: number; endX?: number; endY?: number; lane?: { busNo?: string; busLocalBlID?: string }[] };
 
+const pt = (x?: number, y?: number) => (x && y ? { lat: Number(y), lng: Number(x) } : undefined);
 const walkMin = (s: Sub) => s.sectionTime || Math.round((s.distance ?? 0) / WALK_M_PER_MIN);
 
 // ODsay 대중교통 길찾기 응답 → 후보. 응답 모양이 다르면 이유를 담아 돌려준다.
@@ -34,7 +36,7 @@ export function parseOdsay(body: unknown): Parsed {
       else if (s.trafficType === 2) {
         legs.push({ walkBeforeMin: walk, rideMin: s.sectionTime ?? 0 });
         const lanes = s.lane ?? [];
-        rides.push({ busNos: lanes.map((l) => l.busNo ?? '?'), routeIds: lanes.map((l) => String(l.busLocalBlID ?? '')), stationId: String(s.startLocalStationID ?? ''), from: s.startName ?? '', to: s.endName ?? '', stops: s.stationCount ?? 0 });
+        rides.push({ busNos: lanes.map((l) => l.busNo ?? '?'), routeIds: lanes.map((l) => String(l.busLocalBlID ?? '')), stationId: String(s.startLocalStationID ?? ''), from: s.startName ?? '', to: s.endName ?? '', stops: s.stationCount ?? 0, fromPt: pt(s.startX, s.startY), toPt: pt(s.endX, s.endY) });
         walk = 0;
       }
     }

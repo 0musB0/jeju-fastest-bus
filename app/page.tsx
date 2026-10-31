@@ -5,6 +5,7 @@ import { BOARD_MARGIN_MIN } from '@/lib/config';
 import { parseOdsay, type Route } from '@/lib/odsay';
 import { applyRealtime, directToRoutes, realtimeKeys, type Headways, type PlanResults } from '@/lib/realtime';
 import type { Direct } from '@/lib/direct';
+import RouteMap from './RouteMap';
 
 type Place = { name: string; address?: string; lat: number; lng: number };
 type Ranked = Route & { eta: ReturnType<typeof arrivalMin> };
@@ -96,6 +97,7 @@ export default function Home() {
   const [at, setAt] = useState<Date | null>(null);
   const [stale, setStale] = useState(false);
   const [msg, setMsg] = useState('');
+  const [sel, setSel] = useState(0);
 
   async function plan() {
     if (!from || !to) return;
@@ -130,6 +132,7 @@ export default function Home() {
         .map((r) => ({ ...r, eta: arrivalMin(r.candidate) }))
         .sort((a, b) => (a.eta ? 0 : 1) - (b.eta ? 0 : 1) || (a.eta?.min ?? a.odsayMin) - (b.eta?.min ?? b.odsayMin));
       setRoutes(ranked.slice(0, 3));
+      setSel(0);
       setAt(new Date());
       setStale(false);
       setMsg('');
@@ -166,6 +169,7 @@ export default function Home() {
           {stale && <button className="primary" onClick={plan}>다시 계산</button>}
         </div>
       )}
+      {from && to && routes[sel] && <RouteMap from={from} to={to} rides={routes[sel].rides} />}
       {routes.map((r, i) => {
         const walk = r.candidate.legs.reduce((s, l) => s + l.walkBeforeMin, r.candidate.walkAfterMin);
         const leg = r.candidate.legs[0];
@@ -173,7 +177,7 @@ export default function Home() {
         const next = leg.nextBusesMin?.find((b) => b >= leg.walkBeforeMin + BOARD_MARGIN_MIN) ?? leg.nextBusesMin?.[0];
         const [stop, side] = splitStop(r.rides[0].from);
         return (
-          <article key={i} className={`box result${i === 0 && r.eta ? ' best' : ''}`} style={{ '--i': i } as React.CSSProperties}>
+          <article key={i} className={`box result${i === 0 && r.eta ? ' best' : ''}${i === sel ? ' sel' : ''}`} style={{ '--i': i } as React.CSSProperties} onClick={() => setSel(i)}>
             <div className="row" style={{ alignItems: 'flex-start' }}>
               <div style={{ flex: 1 }}>
                 <div className="chips">{busNumbers(r.rides[0].busNos).map((n) => <span key={n} className="chip">{n}</span>)}</div>

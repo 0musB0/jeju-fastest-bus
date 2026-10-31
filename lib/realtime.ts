@@ -77,7 +77,7 @@ export function directToRoutes(direct: Direct[], existing: Route[]): Route[] {
       const walkBeforeMin = Math.round(d.walkBeforeMin), walkAfterMin = Math.round(d.walkAfterMin);
       return {
         candidate: { legs: [{ walkBeforeMin, rideMin }], walkAfterMin },
-        rides: [{ busNos: [d.no], routeIds: [d.routeId], stationId: d.fromId, from: d.fromName, to: d.toName, stops: d.stops }],
+        rides: [{ busNos: [d.no], routeIds: [d.routeId], stationId: d.fromId, from: d.fromName, to: d.toName, stops: d.stops, fromPt: d.fromPt, toPt: d.toPt }],
         fare: 0,
         odsayMin: walkBeforeMin + rideMin + walkAfterMin,
       };

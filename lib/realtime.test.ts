@@ -40,7 +40,7 @@ test('실시간 쌍과 분 변환: 두 노선을 합쳐 가까운 순, 정류장
 });
 
 test('직행 후보: ODsay에 이미 있는 노선·정류장은 빼고 후보로 바꾼다', () => {
-  const d = { routeId: '405136501', no: '365', heading: '시청', fromId: '405000153', fromName: '공항', toName: '시청', stops: 4, walkBeforeMin: 2.4, walkAfterMin: 1 };
+  const d = { routeId: '405136501', no: '365', heading: '시청', fromId: '405000153', fromName: '공항', toName: '시청', stops: 4, walkBeforeMin: 2.4, walkAfterMin: 1, fromPt: { lat: 33.5, lng: 126.5 }, toPt: { lat: 33.51, lng: 126.5 } };
   assert.equal(directToRoutes([d], [route]).length, 0);
   const [r] = directToRoutes([{ ...d, routeId: '405999999' }], [route]);
   assert.deepEqual(r.candidate, { legs: [{ walkBeforeMin: 2, rideMin: 8 }], walkAfterMin: 1 });
