@@ -30,27 +30,41 @@ export function stopsAway(loc: { stationId: string; ord: number; bus: boolean }[
   return away.sort((a, b) => a - b);
 }
 
+// 배차 간격 추정: 노선 한 방향을 다 도는 시간 ÷ 지금 그 노선에 있는 버스 수. 버스가 없으면 undefined.
+// 단순화: 시간표가 없어 운행 중인 버스 수로 간격을 추정함, 시간표를 구하면 교체
+export function headwayMin(loc: { bus: boolean }[]): number | undefined {
+  const buses = loc.filter((s) => s.bus).length;
+  return buses ? (loc.length * MIN_PER_STOP) / buses : undefined;
+}
 
 export type PlanResults = Record<string, number[] | { error: string }>;
+export type Headways = Record<string, number>;
 
-// 첫 버스 구간에서 실시간으로 조회할 "노선:정류장" 쌍. 빠른 경로부터 노선 max개까지.
+// 실시간으로 조회할 "노선:정류장" 쌍. 빠른 경로의 첫 버스 먼저, 그다음 환승 버스, 노선 max개까지.
 export function realtimeKeys(routes: Route[], max = 10): string[] {
-  const keys = routes.flatMap((r) => r.rides[0].routeIds.filter(Boolean).map((id) => `${id}:${r.rides[0].stationId}`));
+  const keyOf = (ride: Route['rides'][number]) => ride.routeIds.filter(Boolean).map((id) => `${id}:${ride.stationId}`);
+  const keys = [...routes.flatMap((r) => keyOf(r.rides[0])), ...routes.flatMap((r) => r.rides.slice(1).flatMap(keyOf))];
   const routeIds = [...new Set(keys.map((k) => k.split(':')[0]))].slice(0, max);
   return [...new Set(keys)].filter((k) => routeIds.includes(k.split(':')[0]));
 }
 
-// 남은 정류장 수 → 첫 구간의 "몇 분 뒤 버스". 같은 구간을 달리는 노선(lane)이 여럿이면 합친다.
-export function applyRealtime(route: Route, results: PlanResults): Route {
-  const ride = route.rides[0];
-  const leg = route.candidate.legs[0];
-  // 단순화: 이 구간의 정류장당 평균 소요(탑승 시간 ÷ 정류장 수)를 버스가 오는 길에도 씀, 신호·정차 편차는 무시
-  const perStop = ride.stops > 0 && leg.rideMin > 0 ? leg.rideMin / ride.stops : MIN_PER_STOP;
-  const found = ride.routeIds.map((id) => results[`${id}:${ride.stationId}`]).filter(Array.isArray);
-  const mins = found.flat().map((n) => n * perStop);
-  if (!mins.length) return found.length ? { ...route, noBusNow: true } : route;
-  const legs = [{ ...leg, nextBusesMin: mins.sort((a, b) => a - b) }, ...route.candidate.legs.slice(1)];
-  return { ...route, candidate: { ...route.candidate, legs } };
+// 남은 정류장 수 → 첫 구간의 "몇 분 뒤 버스", 모든 구간의 배차 간격. 같은 구간을 달리는 노선(lane)이 여럿이면 합친다.
+export function applyRealtime(route: Route, results: PlanResults, headways: Headways = {}): Route {
+  let noBusNow = false;
+  const legs = route.candidate.legs.map((leg, i) => {
+    const ride = route.rides[i];
+    // 여러 노선이 같은 구간을 다니면 합친 간격 = 1 / Σ(1/간격)
+    const freq = ride.routeIds.reduce((s, id) => s + (headways[id] ? 1 / headways[id] : 0), 0);
+    const next = { ...leg, ...(freq ? { intervalMin: 1 / freq } : {}) };
+    if (i > 0) return next;
+    // 단순화: 이 구간의 정류장당 평균 소요(탑승 시간 ÷ 정류장 수)를 버스가 오는 길에도 씀, 신호·정차 편차는 무시
+    const perStop = ride.stops > 0 && leg.rideMin > 0 ? leg.rideMin / ride.stops : MIN_PER_STOP;
+    const found = ride.routeIds.map((id) => results[`${id}:${ride.stationId}`]).filter(Array.isArray);
+    const mins = found.flat().map((n) => n * perStop).sort((a, b) => a - b);
+    if (!mins.length && found.length) noBusNow = true;
+    return mins.length ? { ...next, nextBusesMin: mins } : next;
+  });
+  return { ...route, candidate: { ...route.candidate, legs }, ...(noBusNow ? { noBusNow } : {}) };
 }
 
 // 서버가 찾은 직행 후보 → 화면 후보. ODsay에 같은 (노선, 정류장) 직행이 이미 있으면 뺀다.

@@ -2,14 +2,14 @@
 import { useEffect, useState } from 'react';
 import { arrivalMin, kstClock } from '@/lib/eta';
 import { parseOdsay, type Route } from '@/lib/odsay';
-import { applyRealtime, directToRoutes, realtimeKeys, type PlanResults } from '@/lib/realtime';
+import { applyRealtime, directToRoutes, realtimeKeys, type Headways, type PlanResults } from '@/lib/realtime';
 import type { Direct } from '@/lib/direct';
 
 type Place = { name: string; address?: string; lat: number; lng: number };
 type Ranked = Route & { eta: ReturnType<typeof arrivalMin> };
 
 const ODSAY_KEY = process.env.NEXT_PUBLIC_ODSAY_KEY ?? '';
-const SOURCE_LABEL = { realtime: '실시간', timetable: '시간표 기준', unknown: '' } as const;
+const SOURCE_LABEL = { realtime: '실시간', timetable: '배차 간격 추정', unknown: '' } as const;
 
 function PlacePicker({ label, value, onPick, allowHere }: { label: string; value: Place | null; onPick: (p: Place | null) => void; allowHere?: boolean }) {
   const [q, setQ] = useState('');
@@ -80,21 +80,24 @@ export default function Home() {
         SX: String(from.lng), SY: String(from.lat), EX: String(to.lng), EY: String(to.lat), SearchPathType: '2', apiKey: ODSAY_KEY,
       })}`).then((r) => r.json());
       const parsed = parseOdsay(body);
-      if (!parsed.ok) return setMsg(parsed.reason === '경로 없음' ? '버스로 가는 경로가 없어요. 걸어가기 가까운 거리일 수 있어요.' : parsed.reason);
-      // 실시간 버스 위치로 첫 버스 대기를 채우고, 서버가 찾은 직행 후보를 더한다. 실패하면 ODsay 결과만 쓴다.
-      const odsay = [...parsed.routes].sort((a, b) => a.odsayMin - b.odsayMin);
+      if (!parsed.ok && parsed.reason !== '경로 없음') return setMsg(parsed.reason);
+      // 실시간 버스 위치로 대기를 채우고, 서버가 찾은 직행 후보를 더한다. ODsay가 경로를 못 찾아도 직행 후보는 본다.
+      const odsay = parsed.ok ? [...parsed.routes].sort((a, b) => a.odsayMin - b.odsayMin) : [];
       let results: PlanResults = {};
+      let headways: Headways = {};
       let direct: Direct[] = [];
       try {
         const q = new URLSearchParams({ q: realtimeKeys(odsay).join(','), from: `${from.lat},${from.lng}`, to: `${to.lat},${to.lng}` });
         const r = await fetch(`/api/plan?${q}`).then((r) => r.json());
         results = r.results ?? {};
+        headways = r.headways ?? {};
         direct = r.direct ?? [];
       } catch { /* 실시간 실패: 아래에서 추정 불가로 표시 */ }
       const byTime = [...odsay, ...directToRoutes(direct, odsay)];
+      if (!byTime.length) return setMsg('버스로 가는 경로가 없어요. 걸어가기 가까운 거리일 수 있어요.');
       // 대기를 알 수 있는 후보가 먼저, 그 안에서 도착이 빠른 순. 모르면 이동 시간 순으로 맨 뒤.
       const ranked = byTime
-        .map((r) => applyRealtime(r, results))
+        .map((r) => applyRealtime(r, results, headways))
         .map((r) => ({ ...r, eta: arrivalMin(r.candidate) }))
         .sort((a, b) => (a.eta ? 0 : 1) - (b.eta ? 0 : 1) || (a.eta?.min ?? a.odsayMin) - (b.eta?.min ?? b.odsayMin));
       setRoutes(ranked.slice(0, 3));

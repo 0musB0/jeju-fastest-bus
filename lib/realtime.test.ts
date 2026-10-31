@@ -22,7 +22,7 @@ test('결과 코드가 00이 아니면 오류 이유', () => {
   assert.equal(parseBusLocation('<html>오류</html>').ok, false);
 });
 
-import { applyRealtime, realtimeKeys, directToRoutes } from './realtime.ts';
+import { applyRealtime, realtimeKeys, directToRoutes, headwayMin } from './realtime.ts';
 import type { Route } from './odsay.ts';
 
 const route: Route = {
@@ -35,7 +35,7 @@ test('실시간 쌍과 분 변환: 두 노선을 합쳐 가까운 순, 정류장
   assert.deepEqual(realtimeKeys([route]), ['405136501:405000153', '405146501:405000153']);
   const r = applyRealtime(route, { '405136501:405000153': [5], '405146501:405000153': [2] });
   assert.deepEqual(r.candidate.legs[0].nextBusesMin, [6, 15]);
-  assert.equal(applyRealtime(route, { '405136501:405000153': { error: 'x' } }), route);
+  assert.deepEqual(applyRealtime(route, { '405136501:405000153': { error: 'x' } }), route);
   assert.equal(applyRealtime(route, { '405136501:405000153': [] }).noBusNow, true);
 });
 
@@ -44,4 +44,15 @@ test('직행 후보: ODsay에 이미 있는 노선·정류장은 빼고 후보�
   assert.equal(directToRoutes([d], [route]).length, 0);
   const [r] = directToRoutes([{ ...d, routeId: '405999999' }], [route]);
   assert.deepEqual(r.candidate, { legs: [{ walkBeforeMin: 2, rideMin: 8 }], walkAfterMin: 1 });
+});
+
+test('배차 간격: 노선 길이 × 정류장당 소요 ÷ 버스 수, 환승 구간에 채워진다', () => {
+  const loc = Array.from({ length: 40 }, (_, i) => ({ bus: i % 10 === 0 }));
+  assert.equal(headwayMin(loc), 20); // 40정류장 × 2분 ÷ 4대
+  assert.equal(headwayMin([{ bus: false }]), undefined);
+  const transfer: Route = { ...route, candidate: { legs: [route.candidate.legs[0], { walkBeforeMin: 1, rideMin: 5 }], walkAfterMin: 0 },
+    rides: [route.rides[0], { busNos: ['500'], routeIds: ['405150001', '405150002'], stationId: '405000200', from: '시청', to: '노형', stops: 3 }] };
+  assert.deepEqual(realtimeKeys([transfer]), ['405136501:405000153', '405146501:405000153', '405150001:405000200', '405150002:405000200']);
+  const r = applyRealtime(transfer, { '405136501:405000153': [1] }, { '405150001': 20, '405150002': 20 });
+  assert.equal(r.candidate.legs[1].intervalMin, 10); // 두 노선 합쳐 10분 간격
 });

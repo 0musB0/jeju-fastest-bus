@@ -1,5 +1,5 @@
 import { revalidateTag } from 'next/cache';
-import { parseBusLocation, stopsAway } from '@/lib/realtime';
+import { headwayMin, parseBusLocation, stopsAway } from '@/lib/realtime';
 import { directCandidates, type Station, type BusRoute } from '@/lib/direct';
 import stationList from '@/data/stations.json';
 import routeList from '@/data/routes.json';
@@ -57,5 +57,10 @@ export async function GET(req: Request) {
     const away = loc.ok ? stopsAway(loc.stops, s) : null;
     results[`${r}:${s}`] = !loc.ok ? { error: loc.reason } : away ?? { error: '이 노선에 없는 정류장' };
   }
-  return Response.json({ results, direct: direct.filter((d) => routeIds.includes(d.routeId)) });
+  const headways: Record<string, number> = {};
+  for (const [r, loc] of locs) {
+    const h = loc.ok ? headwayMin(loc.stops) : undefined;
+    if (h) headways[r] = h;
+  }
+  return Response.json({ results, headways, direct: direct.filter((d) => routeIds.includes(d.routeId)) });
 }
