@@ -82,9 +82,9 @@ export function buildEntry(trips: [number, number][][]): Entry | null {
   const offs = new Map<number, number[]>();
   for (const t of trips.filter((t) => t[0][0] === ref)) for (const [o, m] of t) offs.set(o, [...(offs.get(o) ?? []), m - t[0][1]]);
   const p = [...offs].sort((a, b) => a[0] - b[0]).flatMap(([o, ms]) => [o, median(ms)]);
-  // 이름을 잘못 맞춘 노선 거르기: 소요가 거꾸로 가거나 정류장당 0.5~4분을 벗어나면 버린다
+  // 이름을 잘못 맞춘 노선 거르기: 소요가 거꾸로 가거나 정류장당 0.5~6분(도심급행은 정류장이 드물어 4분을 넘음)을 벗어나면 버린다
   const n = p.length / 2, rate = (p[2 * n - 1] - p[1]) / (p[2 * n - 2] - p[0] || 1);
-  if (n < 2 || rate < 0.5 || rate > 4 || p.some((v, i) => i % 2 === 1 && i > 1 && v < p[i - 2])) return null;
+  if (n < 2 || rate < 0.5 || rate > 6 || p.some((v, i) => i % 2 === 1 && i > 1 && v < p[i - 2])) return null;
   const t = [...new Set(trips.map((tr) => Math.round(tr[0][1] - offsetAt(p, tr[0][0]))))].sort((a, b) => a - b);
   return { p, t };
 }
