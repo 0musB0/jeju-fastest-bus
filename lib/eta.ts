@@ -1,4 +1,4 @@
-import { BOARD_MARGIN_MIN } from './config.ts';
+import { BOARD_MARGIN_MIN, TRANSFER_MARGIN_MIN } from './config.ts';
 
 // 버스 한 번 타는 구간. 모든 분(min) 값은 "지금"으로부터가 아니라 구간 길이다. nextBusesMin만 "지금"부터의 분.
 export type BusLeg = {
@@ -19,7 +19,8 @@ export function arrivalMin(c: Candidate): { min: number; source: WaitSource } | 
     const atStop = t + leg.walkBeforeMin;
     // 환승 후 두 번째 버스부터는 항상 시간표 기준으로 계산한다.
     const buses = i === 0 ? (leg.nextBusesMin ?? []) : [];
-    const canBoard = (b: number) => b >= atStop + BOARD_MARGIN_MIN;
+    // 환승 버스는 3분 이상 여유가 있어야 탈 수 있다고 본다 (빠듯한 환승은 다음 차로 계산)
+    const canBoard = (b: number) => b >= atStop + (i === 0 ? BOARD_MARGIN_MIN : TRANSFER_MARGIN_MIN);
     const bus = buses.find(canBoard);
     const scheduled = leg.timetableMin?.find(canBoard);
     let board: number;

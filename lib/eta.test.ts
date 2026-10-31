@@ -57,3 +57,9 @@ test('자정 전후 KST: UTC 14:55는 KST 23:55, 20분 뒤는 00:15', () => {
   assert.equal(kstClock12(now), '11:55 PM');
   assert.equal(kstClock12(now, 20), '12:15 AM');
 });
+
+test('환승: 앞 버스에서 내린 뒤 3분 안에 오는 버스는 못 탄다고 보고 다음 차로', () => {
+  const c = { legs: [{ walkBeforeMin: 0, nextBusesMin: [5], rideMin: 10 }, { walkBeforeMin: 1, timetableMin: [17, 30], rideMin: 10 }], walkAfterMin: 0 };
+  // 15분에 내려 16분에 정류장, 17분 버스는 여유 1분 → 30분 버스
+  assert.equal(arrivalMin(c)?.min, 40);
+});
