@@ -20,6 +20,13 @@ export async function GET(req: Request) {
   const node = p.get('node'); // 정류장 ID를 주면 그 정류장의 도착 예정 정보를 조회
   const q = (o: Record<string, string>) => new URLSearchParams({ serviceKey: key, _type: 'json', numOfRows: '20', ...o });
 
+  // ?bis=Station,BusArrives?station=405000153 처럼 busopen 경로를 시험한다 (호스트 고정, 1단계 전용)
+  const bis = p.get('bis');
+  if (bis) {
+    const paths = bis.split(',').filter((x) => /^[A-Za-z]+(\?[A-Za-z0-9=&]*)?$/.test(x)).slice(0, 10);
+    return Response.json(await Promise.all(paths.map((x) => probe(x, `http://busopen.jeju.go.kr/OpenAPI/service/bis/${x}`))));
+  }
+
   const results = await Promise.all([
     probe('TAGO 도시코드 목록', `${TAGO}/BusSttnInfoInqireService/getCtyCodeList?${q({})}`),
     probe('TAGO 정류장 검색(제주시청)', `${TAGO}/BusSttnInfoInqireService/getSttnNoList?${q({ cityCode: city, nodeNm: '제주시청' })}`),
