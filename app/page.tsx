@@ -113,7 +113,9 @@ export default function Home() {
         headways = r.headways ?? {};
         direct = r.direct ?? [];
       } catch { /* 실시간 실패: 아래에서 추정 불가로 표시 */ }
-      const byTime = [...odsay, ...directToRoutes(direct, odsay)];
+      // ODsay 경로보다 이동만 1.5배 넘게 걸리는 직행 후보는 뺀다 (정류장 수 × 평균 소요라 긴 노선은 부정확)
+      const bestOdsay = odsay[0]?.odsayMin ?? Infinity;
+      const byTime = [...odsay, ...directToRoutes(direct, odsay).filter((r) => r.odsayMin <= bestOdsay * 1.5)];
       if (!byTime.length) return setMsg('버스로 가는 경로가 없어요. 걸어가기 가까운 거리일 수 있어요.');
       // 대기를 알 수 있는 후보가 먼저, 그 안에서 도착이 빠른 순. 모르면 이동 시간 순으로 맨 뒤.
       const ranked = byTime
