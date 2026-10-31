@@ -11,6 +11,7 @@ const routes = routeList as BusRoute[];
 const stationIds = new Set(stations.map((s) => s.id));
 const ID = /^\d{9}$/;
 const MAX_ROUTES = 10;
+const CONCURRENCY = 2;
 
 const point = (v: string | null) => {
   const [lat, lng] = (v ?? '').split(',').map(Number);
@@ -44,7 +45,11 @@ export async function GET(req: Request) {
   // 노선은 ODsay 후보 먼저, 그다음 직행 후보, 합쳐서 최대 10개
   const routeIds = [...new Set([...pairs.map(([r]) => r), ...direct.map((d) => d.routeId)])].slice(0, MAX_ROUTES);
   const allPairs = [...pairs, ...direct.map((d) => [d.routeId, d.fromId])].filter(([r]) => routeIds.includes(r));
-  const locs = new Map(await Promise.all(routeIds.map(async (r) => [r, await busLocation(r)] as const)));
+  // 제주 서버는 동시에 여러 개를 보내면 전부 3초를 넘긴다(실측). 2개씩 나눠 보낸다.
+  const locs = new Map<string, Awaited<ReturnType<typeof busLocation>>>();
+  for (let i = 0; i < routeIds.length; i += CONCURRENCY) {
+    await Promise.all(routeIds.slice(i, i + CONCURRENCY).map(async (r) => locs.set(r, await busLocation(r))));
+  }
 
   const results: Record<string, number[] | { error: string }> = {};
   for (const [r, s] of allPairs) {
