@@ -9,6 +9,8 @@ type Place = { name: string; address?: string; lat: number; lng: number };
 type Ranked = Route & { eta: ReturnType<typeof arrivalMin> };
 
 const ODSAY_KEY = process.env.NEXT_PUBLIC_ODSAY_KEY ?? '';
+// 도착 칸 안내 문구: 제주말로 3초마다 바뀐다
+const ASKS = ['어디 감수꽈?', '어드레 가카마씸?', '오늘은 또 어드레 감서?'];
 const SOURCE_LABEL = { realtime: '실시간', timetable: '배차 간격 추정', unknown: '' } as const;
 
 function PlacePicker({ label, value, onPick, allowHere }: { label: string; value: Place | null; onPick: (p: Place | null) => void; allowHere?: boolean }) {
@@ -28,6 +30,13 @@ function PlacePicker({ label, value, onPick, allowHere }: { label: string; value
       setMsg('장소 검색에 실패했어요');
     }
   }
+
+  const [ask, setAsk] = useState(0);
+  useEffect(() => {
+    if (allowHere) return;
+    const id = setInterval(() => setAsk((i) => (i + 1) % ASKS.length), 3000);
+    return () => clearInterval(id);
+  }, [allowHere]);
 
   // 출발지 기본값은 현재 위치: 처음 한 번 자동으로 묻는다.
   const asked = useRef(false);
@@ -55,7 +64,7 @@ function PlacePicker({ label, value, onPick, allowHere }: { label: string; value
       ) : (
         <>
           <form onSubmit={search} className="row" style={{ marginTop: 6 }}>
-            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={allowHere ? '출발 장소 검색' : '어드레 가카마씸?'} enterKeyHint="search" />
+            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={allowHere ? '출발 장소 검색' : ASKS[ask]} enterKeyHint="search" />
             <button className="primary" disabled={!q.trim()}>검색</button>
           </form>
           {allowHere && (
