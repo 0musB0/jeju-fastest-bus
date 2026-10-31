@@ -9,7 +9,7 @@ type Place = { name: string; address?: string; lat: number; lng: number };
 type Ranked = Route & { eta: ReturnType<typeof arrivalMin> };
 
 const ODSAY_KEY = process.env.NEXT_PUBLIC_ODSAY_KEY ?? '';
-// 도착 칸 안내 문구: 제주말로 3초마다 바뀐다
+// 도착 칸 안내 문구: 제주말, 페이지를 열 때마다 바뀐다
 const ASKS = ['어디 감수꽈?', '어드레 가카마씸?', '오늘은 어드레 감서?'];
 const SOURCE_LABEL = { realtime: '실시간', timetable: '배차 간격 추정', unknown: '' } as const;
 
@@ -32,11 +32,8 @@ function PlacePicker({ label, value, onPick, allowHere }: { label: string; value
   }
 
   const [ask, setAsk] = useState(0);
-  useEffect(() => {
-    if (allowHere) return;
-    const id = setInterval(() => setAsk((i) => (i + 1) % ASKS.length), 3000);
-    return () => clearInterval(id);
-  }, [allowHere]);
+  // 페이지를 열 때마다 하나를 고른다 (서버 렌더와 어긋나지 않게 화면에 붙은 뒤에)
+  useEffect(() => { setAsk(Math.floor(Math.random() * ASKS.length)); }, []);
 
   // 출발지 기본값은 현재 위치: 처음 한 번 자동으로 묻는다.
   const asked = useRef(false);
