@@ -151,8 +151,8 @@ export default function Home() {
         <span>혼저</span> 탑서
       </h1>
       <p className="lead">제주 버스, 가까운 정류장이 아니라 목적지에 가장 먼저 닿는 버스를 찾아요.</p>
-      <PlacePicker label="출발" value={from} onPick={setFrom} allowHere />
-      <PlacePicker label="도착" value={to} onPick={setTo} />
+      <PlacePicker label="출발지" value={from} onPick={setFrom} allowHere />
+      <PlacePicker label="도착지" value={to} onPick={setTo} />
       {msg && <p className="muted">{msg}</p>}
       {at && routes.length > 0 && (
         <div className="meta">
