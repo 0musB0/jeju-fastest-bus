@@ -3,7 +3,8 @@ import { WALK_M_PER_MIN } from './config.ts';
 
 // routeIds·stationId는 제주 BIS ID (ODsay의 busLocalBlID, startLocalStationID). 실시간 조회에 쓴다.
 export type Ride = { busNos: string[]; routeIds: string[]; stationId: string; from: string; to: string; stops: number };
-export type Route = { candidate: Candidate; rides: Ride[]; fare: number; odsayMin: number };
+// fare 0 = 요금 모름 (직행 후보). noBusNow = 실시간 조회는 됐는데 오는 버스가 없음.
+export type Route = { candidate: Candidate; rides: Ride[]; fare: number; odsayMin: number; noBusNow?: boolean };
 export type Parsed = { ok: true; routes: Route[] } | { ok: false; reason: string };
 
 type Sub = { trafficType: number; sectionTime?: number; distance?: number; startName?: string; endName?: string; stationCount?: number; startLocalStationID?: string; lane?: { busNo?: string; busLocalBlID?: string }[] };

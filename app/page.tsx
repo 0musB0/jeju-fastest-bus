@@ -2,7 +2,8 @@
 import { useEffect, useState } from 'react';
 import { arrivalMin, kstClock } from '@/lib/eta';
 import { parseOdsay, type Route } from '@/lib/odsay';
-import { applyRealtime, realtimeKeys, type PlanResults } from '@/lib/realtime';
+import { applyRealtime, directToRoutes, realtimeKeys, type PlanResults } from '@/lib/realtime';
+import type { Direct } from '@/lib/direct';
 
 type Place = { name: string; address?: string; lat: number; lng: number };
 type Ranked = Route & { eta: ReturnType<typeof arrivalMin> };
@@ -80,15 +81,17 @@ export default function Home() {
       })}`).then((r) => r.json());
       const parsed = parseOdsay(body);
       if (!parsed.ok) return setMsg(parsed.reason === '경로 없음' ? '버스로 가는 경로가 없어요. 걸어가기 가까운 거리일 수 있어요.' : parsed.reason);
-      // 실시간 버스 위치로 첫 버스 대기를 채운다. 실패하면 대기 추정 불가로 둔다.
-      const byTime = [...parsed.routes].sort((a, b) => a.odsayMin - b.odsayMin);
-      const keys = realtimeKeys(byTime);
+      // 실시간 버스 위치로 첫 버스 대기를 채우고, 서버가 찾은 직행 후보를 더한다. 실패하면 ODsay 결과만 쓴다.
+      const odsay = [...parsed.routes].sort((a, b) => a.odsayMin - b.odsayMin);
       let results: PlanResults = {};
-      if (keys.length) {
-        try {
-          results = (await fetch(`/api/plan?q=${keys.join(',')}`).then((r) => r.json())).results ?? {};
-        } catch { /* 실시간 실패: 아래에서 추정 불가로 표시 */ }
-      }
+      let direct: Direct[] = [];
+      try {
+        const q = new URLSearchParams({ q: realtimeKeys(odsay).join(','), from: `${from.lat},${from.lng}`, to: `${to.lat},${to.lng}` });
+        const r = await fetch(`/api/plan?${q}`).then((r) => r.json());
+        results = r.results ?? {};
+        direct = r.direct ?? [];
+      } catch { /* 실시간 실패: 아래에서 추정 불가로 표시 */ }
+      const byTime = [...odsay, ...directToRoutes(direct, odsay)];
       // 대기를 알 수 있는 후보가 먼저, 그 안에서 도착이 빠른 순. 모르면 이동 시간 순으로 맨 뒤.
       const ranked = byTime
         .map((r) => applyRealtime(r, results))
@@ -129,7 +132,7 @@ export default function Home() {
               {r.eta ? (
                 <b>{kstClock(at!, r.eta.min)} 도착 ({Math.round(r.eta.min)}분 뒤) · {SOURCE_LABEL[r.eta.source]}</b>
               ) : (
-                <b>이동 {r.odsayMin}분 + 대기 · 지금 오는 버스 없음 또는 대기 추정 불가</b>
+                <b>이동 {r.odsayMin}분 + 대기 · {r.noBusNow ? '지금 운행 중인 버스 없음 (첫차 전이거나 막차 후일 수 있어요)' : '대기 추정 불가'}</b>
               )}
               {r.rides.map((x, j) => (
                 <div key={j}>
@@ -137,12 +140,12 @@ export default function Home() {
                   {j === 0 && r.candidate.legs[0].nextBusesMin && <> · 다음 버스 {Math.round(r.candidate.legs[0].nextBusesMin[0])}분 뒤</>}
                 </div>
               ))}
-              <small style={{ color: '#666' }}>걷기 {walk}분 · 요금 {r.fare.toLocaleString()}원</small>
+              <small style={{ color: '#666' }}>걷기 {walk}분 · {r.fare ? `요금 ${r.fare.toLocaleString()}원` : '요금 정보 없음 (직행 후보)'}</small>
             </li>
           );
         })}
       </ol>
-      {/* 단순화: 첫차 전·막차 후 안내는 시간표 데이터가 들어오는 3단계에서 추가 */}
+      {/* 단순화: 시간표 데이터가 없어 첫차·막차는 "운행 중인 버스 없음"으로만 안내함, 시간표를 구하면 정확한 시각으로 교체 */}
     </main>
   );
 }

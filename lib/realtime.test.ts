@@ -22,7 +22,7 @@ test('결과 코드가 00이 아니면 오류 이유', () => {
   assert.equal(parseBusLocation('<html>오류</html>').ok, false);
 });
 
-import { applyRealtime, realtimeKeys } from './realtime.ts';
+import { applyRealtime, realtimeKeys, directToRoutes } from './realtime.ts';
 import type { Route } from './odsay.ts';
 
 const route: Route = {
@@ -36,4 +36,12 @@ test('실시간 쌍과 분 변환: 두 노선을 합쳐 가까운 순, 정류장
   const r = applyRealtime(route, { '405136501:405000153': [5], '405146501:405000153': [2] });
   assert.deepEqual(r.candidate.legs[0].nextBusesMin, [6, 15]);
   assert.equal(applyRealtime(route, { '405136501:405000153': { error: 'x' } }), route);
+  assert.equal(applyRealtime(route, { '405136501:405000153': [] }).noBusNow, true);
+});
+
+test('직행 후보: ODsay에 이미 있는 노선·정류장은 빼고 후보로 바꾼다', () => {
+  const d = { routeId: '405136501', no: '365', heading: '시청', fromId: '405000153', fromName: '공항', toName: '시청', stops: 4, walkBeforeMin: 2.4, walkAfterMin: 1 };
+  assert.equal(directToRoutes([d], [route]).length, 0);
+  const [r] = directToRoutes([{ ...d, routeId: '405999999' }], [route]);
+  assert.deepEqual(r.candidate, { legs: [{ walkBeforeMin: 2, rideMin: 8 }], walkAfterMin: 1 });
 });

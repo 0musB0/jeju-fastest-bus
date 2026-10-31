@@ -1,5 +1,6 @@
 import type { Route } from './odsay.ts';
 import { MIN_PER_STOP } from './config.ts';
+import type { Direct } from './direct.ts';
 // 제주 버스정보(busopen) BusLocation 응답(XML) 해석. 외부 호출 없음.
 // 응답은 노선의 모든 정류장을 순서대로 주고, 버스가 있는 정류장에만 plateNo가 붙는다.
 
@@ -45,11 +46,26 @@ export function applyRealtime(route: Route, results: PlanResults): Route {
   const leg = route.candidate.legs[0];
   // 단순화: 이 구간의 정류장당 평균 소요(탑승 시간 ÷ 정류장 수)를 버스가 오는 길에도 씀, 신호·정차 편차는 무시
   const perStop = ride.stops > 0 && leg.rideMin > 0 ? leg.rideMin / ride.stops : MIN_PER_STOP;
-  const mins = ride.routeIds.flatMap((id) => {
-    const r = results[`${id}:${ride.stationId}`];
-    return Array.isArray(r) ? r.map((n) => n * perStop) : [];
-  });
-  if (!mins.length) return route;
+  const found = ride.routeIds.map((id) => results[`${id}:${ride.stationId}`]).filter(Array.isArray);
+  const mins = found.flat().map((n) => n * perStop);
+  if (!mins.length) return found.length ? { ...route, noBusNow: true } : route;
   const legs = [{ ...leg, nextBusesMin: mins.sort((a, b) => a - b) }, ...route.candidate.legs.slice(1)];
   return { ...route, candidate: { ...route.candidate, legs } };
+}
+
+// 서버가 찾은 직행 후보 → 화면 후보. ODsay에 같은 (노선, 정류장) 직행이 이미 있으면 뺀다.
+export function directToRoutes(direct: Direct[], existing: Route[]): Route[] {
+  const seen = new Set(existing.filter((r) => r.rides.length === 1).flatMap((r) => r.rides[0].routeIds.map((id) => `${id}:${r.rides[0].stationId}`)));
+  return direct
+    .filter((d) => !seen.has(`${d.routeId}:${d.fromId}`))
+    .map((d) => {
+      const rideMin = d.stops * MIN_PER_STOP;
+      const walkBeforeMin = Math.round(d.walkBeforeMin), walkAfterMin = Math.round(d.walkAfterMin);
+      return {
+        candidate: { legs: [{ walkBeforeMin, rideMin }], walkAfterMin },
+        rides: [{ busNos: [d.no], routeIds: [d.routeId], stationId: d.fromId, from: d.fromName, to: d.toName, stops: d.stops }],
+        fare: 0,
+        odsayMin: walkBeforeMin + rideMin + walkAfterMin,
+      };
+    });
 }
