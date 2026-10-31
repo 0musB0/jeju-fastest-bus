@@ -21,7 +21,11 @@ export function parseBusLocation(xml: string): BusLocation {
 export function stopsAway(loc: { stationId: string; ord: number; bus: boolean }[], stationId: string): number[] | null {
   const mine = loc.filter((s) => s.stationId === stationId).map((s) => s.ord);
   if (!mine.length) return null;
-  const away = loc.filter((s) => s.bus).flatMap((b) => mine.filter((m) => m >= b.ord).map((m) => m - b.ord));
+  // 같은 정류장이 노선에 여러 번 나오면(회차·가상정류소) 버스마다 가장 가까운 것만 센다.
+  const away = loc.filter((s) => s.bus).flatMap((b) => {
+    const ahead = mine.filter((m) => m >= b.ord).map((m) => m - b.ord);
+    return ahead.length ? [Math.min(...ahead)] : [];
+  });
   return away.sort((a, b) => a - b);
 }
 

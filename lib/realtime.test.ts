@@ -13,6 +13,8 @@ test('버스 위치에서 우리 정류장까지 남은 정류장 수', () => {
   assert.deepEqual(stopsAway(r.stops, 'E'), [2, 4]);
   assert.deepEqual(stopsAway(r.stops, 'B'), [1]); // 이미 지나간 버스(3번 정류장)는 빼고
   assert.equal(stopsAway(r.stops, 'Z'), null); // 노선에 없는 정류장 (방향이 반대인 정류장 포함)
+  // 같은 정류장이 두 번 나와도 버스 한 대는 한 번만
+  assert.deepEqual(stopsAway([...r.stops, { stationId: 'E', ord: 6, bus: false }], 'E'), [2, 4]);
 });
 
 test('결과 코드가 00이 아니면 오류 이유', () => {
