@@ -125,8 +125,11 @@ export function buildEntry(trips: Trip[], cum?: number[]): Entry | null {
     else k += 2;
   }
   // 이름을 잘못 맞춘 노선 거르기: 소요가 거꾸로 가거나 정류장당 0.5~6분(도심급행은 정류장이 드물어 4분을 넘음)을 벗어나면 버린다
-  const n = p.length / 2, rate = (p[2 * n - 1] - p[1]) / (p[2 * n - 2] - p[0] || 1);
-  if (n < 2 || rate < 0.5 || rate > 6 || p.some((v, i) => i % 2 === 1 && i > 1 && v < p[i - 2])) return null;
+  const n = p.length / 2, mins = p[2 * n - 1] - p[1], rate = mins / (p[2 * n - 2] - p[0] || 1);
+  // 거리를 알면 평균 속도로(분당 100m~1km), 모르면 정류장당 0.5~6분. 정류장이 드문 급행(102번: 15정류장 55km 2시간)은 정류장당 8분이 넘는다
+  const fit = cum ? (cum[p[2 * n - 2]] - cum[p[0]]) / (mins || 1) : 0;
+  const ok = cum ? fit >= 100 && fit <= 1000 && rate >= 0.5 : rate >= 0.5 && rate <= 6;
+  if (n < 2 || !ok || p.some((v, i) => i % 2 === 1 && i > 1 && v < p[i - 2])) return null;
   // 같은 시각 운행은 요일을 합친다
   const byTime = new Map<number, number>();
   for (const tr of trips) { const k = Math.round(tr[0][1] - offsetAt(p, tr[0][0])); byTime.set(k, (byTime.get(k) ?? 0) | (tr.m ?? EVERY_DAY)); }
