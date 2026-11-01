@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { arrivals, buildEntry, firstAt, kstDay, kstMinutes, parseTime, sameStop, tripsFor } from './timetable.ts';
+import { arrivals, buildEntry, firstAt, kstDay, kstMinutes, offsetAt, parseTime, sameStop, tripsFor } from './timetable.ts';
 
 test('시각 칸 읽기', () => {
   assert.equal(parseTime('5:50(출발)'), 350);
@@ -72,6 +72,29 @@ test('요일: "토,공휴일 운행 안함" 행은 평일만, 평일 표는 평�
   assert.deepEqual(arrivals(e, 0, 300, 180, 1), [60, 120]); // 평일
   assert.deepEqual(arrivals(e, 0, 300, 180, 2), [60]); // 토요일
   assert.equal(buildEntry(tripsFor({ ...t2, way: '785 한림 → 한경<br>(토·공휴일)' }, s2))!.m?.[0], 6);
+});
+
+test('요일이 탭 이름에만 있으면(320 "(평일)…"/"(휴일)…") 탭 이름으로', () => {
+  const t2 = { cols: ['제주버스터미널(노형로 방향)', '절물'], rows: [['06:00', '06:40']], way: '삼화지구→연북로→수산(하귀)' };
+  const s2 = ['제주버스터미널(노형로 방향)', ...Array.from({ length: 19 }, (_, i) => `x${i}`), '절물'];
+  assert.equal(buildEntry(tripsFor({ ...t2, label: '320 (평일)삼화지구-하귀' }, s2))!.m?.[0], 1);
+  assert.equal(buildEntry(tripsFor({ ...t2, label: '320 (휴일)삼화지구-하귀' }, s2))!.m?.[0], 6);
+  assert.equal(buildEntry(tripsFor({ ...t2, label: '741-1 (토요일)남원' }, s2))!.m?.[0], 2);
+});
+
+test('기준점 밖은 평균 속도로 늘리고, 너무 느린 끝 기준점은 뺀다 (212번 "고성" → 고성리 장만이동산)', () => {
+  assert.equal(offsetAt([10, 0, 20, 20], 0), -20); // 평균 정류장당 2분
+  assert.equal(Math.round(offsetAt([0, 0, 10, 10, 11, 15], 21)), 29); // 15 + 10정류장 × 15/11분 // 끝 구간(5분/정류장) 대신 평균
+  const cum = Array.from({ length: 13 }, (_, k) => k * 400); cum[12] = cum[11] + 200; // 마지막 정류장은 200m인데 6분
+  const e = buildEntry([[[0, 600], [11, 618], [12, 624]]], cum)!;
+  assert.deepEqual(e.p, [0, 0, 11, 18]);
+});
+
+test('중간 정류장에서 출발하는 운행은 그 앞 정류장에 오지 않는다 (320 "노형성당 출발")', () => {
+  const e = buildEntry([[[0, 600], [20, 640]], [[0, 660], [20, 700]], [[10, 734], [20, 754]]])!;
+  assert.deepEqual(e.s, [0, 0, 10]);
+  assert.deepEqual(arrivals(e, 0, 590, 300), [10, 70]); // 기점에는 2대
+  assert.deepEqual(arrivals(e, 15, 590, 300), [40, 100, 154]); // 정류장당 2분, 3번째도 옴
 });
 
 test('KST 요일: 토요일 2, 일요일·공휴일 4, 평일 1', () => {

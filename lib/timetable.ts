@@ -15,7 +15,7 @@ export const EVERY_DAY = 7, WEEKDAY = 1;
 // 표 제목·행 글자 → 요일 비트
 function dayMask(way: string, row: string[]): number {
   const w = way.replace(/<[^>]*>/g, '');
-  let m = /평일/.test(w) ? WEEKDAY : /토|공휴|휴일|주말/.test(w) ? 6 : EVERY_DAY;
+  let m = /평일/.test(w) ? WEEKDAY : /\(토요일\)/.test(w) ? 2 : /토|공휴|휴일|주말/.test(w) ? 6 : EVERY_DAY; // "(토요일)" 탭은 토요일만 (741번)
   const notes = row.join(' ').replace(/<[^>]*>/g, ' ');
   if (/(토|휴일|주말)[^\d]*(운행\s*안\s*함|미운행)/.test(notes) || /\(평일\)/.test(notes)) m &= WEEKDAY;
   return m || EVERY_DAY;
