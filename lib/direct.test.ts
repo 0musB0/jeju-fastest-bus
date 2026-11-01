@@ -50,6 +50,18 @@ test('두 번 환승: 한 번으로 안 닿으면 세 노선을 잇는다', () =
   assert.deepEqual(r.map((t) => t.legs.map((l) => `${l.nos[0]}@${l.fromId}`)), [['100@A', '200@P', '300@Q']]);
 });
 
+test('환승 뒤에 걸어갈 만한 거리만 타는 구간이 있는 경로는 뺀다', () => {
+  // P → P2는 280m (걸어서 약 4.5분): 100 → 200(한두 정류장) → 300 같은 경로는 사람이 타지 않는다
+  const s = (id: string, lat: number) => ({ id, name: id, lat, lng: 126.5 });
+  const st5 = [s('A', 33.5), s('P', 33.518), s('P2', 33.5205), s('E', 33.54)];
+  const routes = [
+    { id: '1', no: '100', to: '', stops: ['A', 'P'] },
+    { id: '2', no: '200', to: '', stops: ['P', 'P2'] },
+    { id: '3', no: '300', to: '', stops: ['P2', 'E'] },
+  ];
+  assert.deepEqual(findTrips({ lat: 33.5, lng: 126.5 }, { lat: 33.54, lng: 126.5 }, indexData(st5, routes)), []);
+});
+
 test('지도 선: 노선 모양이 있으면 정류장 사이 도로 좌표 조각, 없으면 정류장을 이음', () => {
   const st4 = [st('A', 33.5), st('B', 33.505)];
   const r = { id: '1', no: '100', to: '', stops: ['A', 'B'] };

@@ -4,7 +4,7 @@ import { MIN_PER_STOP } from './config.ts';
 
 // 노선별: p = [정류장 순번, 기준 정류장부터 걸리는 분, ...], t = 운행마다 기준 정류장 출발 시각(자정부터 분, 24시 넘으면 1440+)
 // m = 운행마다 요일 (1 평일, 2 토요일, 4 일요일·공휴일 비트, 없으면 매일)
-export type Entry = { p: number[]; t: number[]; m?: number[] };
+export type Entry = { p: number[]; t: number[]; m?: number[]; n?: number }; // n = 시간표를 만들 때 노선의 정류장 수
 export type Timetable = Record<string, Entry>;
 export type Tab = { cols: string[]; rows: string[][]; way?: string }; // "노선번호" 열이 있는 표도 있고 없는 표도 있다
 export type Trip = [number, number][] & { m?: number }; // [순번, 시각] 기준점들, m = 요일
@@ -149,13 +149,13 @@ export function firstAt(e: Entry, ord: number, day = EVERY_DAY): number | undefi
   return ts.length ? ((Math.round(Math.min(...ts) + offsetAt(e.p, ord)) % 1440) + 1440) % 1440 : undefined;
 }
 
-// 공휴일 (대체공휴일 포함). 매년 말에 다음 해를 더한다.
+// 공휴일 (대체공휴일 포함). 매년 말에 다음 해를 더한다. 제헌절은 2026년부터 다시 공휴일(2027-07-17 토 → 19일 대체).
 // ponytail: 손으로 적은 목록, 해가 바뀌면 갱신 필요 (공공 API는 data.go.kr 가입이 필요해 못 씀)
 const HOLIDAYS = new Set([
   '2026-01-01', '2026-02-16', '2026-02-17', '2026-02-18', '2026-03-02', '2026-05-05', '2026-05-25', '2026-06-03', '2026-08-17',
   '2026-09-24', '2026-09-25', '2026-09-28', '2026-10-05', '2026-10-09', '2026-12-25',
   '2027-01-01', '2027-02-08', '2027-02-09', '2027-03-01', '2027-05-05', '2027-05-13', '2027-08-16', '2027-09-14', '2027-09-15',
-  '2027-09-16', '2027-10-04', '2027-10-11', '2027-12-27',
+  '2027-07-19', '2027-09-16', '2027-10-04', '2027-10-11', '2027-12-27',
 ]);
 // KST 기준 요일 비트 (plusDays = 내일이면 1)
 export function kstDay(now: Date, plusDays = 0): number {

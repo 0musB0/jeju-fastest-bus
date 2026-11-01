@@ -68,3 +68,14 @@ test('환승 버스가 몇 분 뒤 오는지와 여유를 화면에 줄 수 있�
   const c = { legs: [{ walkBeforeMin: 0, nextBusesMin: [5], rideMin: 10 }, { walkBeforeMin: 1, timetableMin: [17, 30], rideMin: 10 }], walkAfterMin: 0 };
   assert.deepEqual(arrivalMin(c)?.boards, [{ at: 5, atStop: 0, how: 'realtime' }, { at: 30, atStop: 16, how: 'timetable' }]);
 });
+
+test('실시간에 안 보이는(아직 기점 출발 전) 시간표 버스가 더 이르면 그 버스를 탄다', () => {
+  const leg = { walkBeforeMin: 2, rideMin: 10, nextBusesMin: [25], pendingMin: [5, 40] };
+  const r = arrivalMin({ legs: [leg], walkAfterMin: 1 })!;
+  assert.equal(r.min, 16);
+  assert.equal(r.boards[0].how, 'timetable');
+  // 실시간 버스가 더 이르면 실시간
+  const r2 = arrivalMin({ legs: [{ ...leg, nextBusesMin: [4] }], walkAfterMin: 1 })!;
+  assert.equal(r2.min, 15);
+  assert.equal(r2.boards[0].how, 'realtime');
+});
