@@ -1,6 +1,7 @@
 // 경로 계산 조절값. 바꿀 때는 이 파일만 고친다.
 export const NEAR_STOP_M = 600; // 출발·도착지에서 정류장을 찾는 반경
-export const WALK_DETOUR = 1.3; // 직선거리 → 실제 걷는 거리 배율
+export const WALK_DETOUR = 1.3; // 직선거리 → 실제 걷는 거리 배율 (걷는 길 데이터가 없는 곳에서만)
+export const WALK_NET_MAX_M = 1200; // 출발·도착 걷기를 길 따라 잴 때 이보다 멀면(15분) 그 정류장은 안 씀
 export const WALK_M_PER_MIN = 80; // 성인 보통 걸음(4.8km/h). 하귀→남주동 실측 6분(계산 7.7분, 70일 때) 반영, 2026-11-01
 export const BOARD_MARGIN_MIN = 1; // 버스보다 이만큼 먼저 정류장에 닿아야 탈 수 있다
 export const TRANSFER_MARGIN_MIN = 3; // 환승은 앞 버스 도착·뒤 버스 시간표가 둘 다 어림값이라 여유를 더 둔다

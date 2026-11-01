@@ -29,11 +29,12 @@ function marks(from: Pt, to: Pt, rides: Ride[]): { list: Mark[]; segs: { path: P
   rides.forEach((r, i) => {
     if (!r.fromPt || !r.toPt) return;
     list.push({ pt: r.fromPt, label: i ? '환승' : '승차', kind: 'stop' });
-    segs.push({ path: [last, r.fromPt], bus: false }, { path: r.path && r.path.length > 1 ? r.path : [r.fromPt, r.toPt], bus: true }); // 서버가 준 노선 모양(도로) → 없으면 정류장을 이어 그림
+    // 걷는 길: 서버가 길 따라 찾은 선, 없으면 직선
+    segs.push({ path: r.walkPath ?? [last, r.fromPt], bus: false }, { path: r.path && r.path.length > 1 ? r.path : [r.fromPt, r.toPt], bus: true }); // 서버가 준 노선 모양(도로) → 없으면 정류장을 이어 그림
     if (i === rides.length - 1) list.push({ pt: r.toPt, label: '하차', kind: 'stop' });
     last = r.toPt;
   });
-  segs.push({ path: [last, to], bus: false });
+  segs.push({ path: rides.at(-1)?.walkAfterPath ?? [last, to], bus: false });
   list.push({ pt: to, label: '도착', kind: 'end' });
   return { list, segs };
 }

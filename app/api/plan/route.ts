@@ -7,6 +7,9 @@ import routeList from '@/data/routes.json';
 import timetableData from '@/data/timetable.json';
 import { arrivals, firstAt, kstDay, kstMinutes, offsetAt, type Timetable } from '@/lib/timetable';
 import { MIN_PER_STOP } from '@/lib/config';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { walkGraph, type Walker } from '@/lib/walk';
 
 // 실시간: 노선별 버스 위치 → 우리 정류장까지 남은 정류장 수. 우리 데이터로 경로 후보(직행·환승 1번)도 여기서 찾는다.
 // 그 노선의 정류장 목록에 있는 정류장만 받고, 고정된 BusLocation 주소만 부르므로 아무 데나 부르는 프록시가 되지 않는다.
@@ -23,6 +26,9 @@ const rideMin: RideMin = (r, i, j) => {
   const m = e ? offsetAt(e.p, j) - offsetAt(e.p, i) : 0;
   return Math.round(m >= 1 ? m : roughRide(index, r, i, j)); // 1분 미만은 시간표 보간 오차로 보고 어림값
 };
+// 걷는 길(OpenStreetMap). 없으면 직선 × 배율로 계산한다.
+let walker: Walker | undefined;
+try { walker = walkGraph(JSON.parse(readFileSync(join(process.cwd(), 'data', 'walk.json'), 'utf8'))); } catch { walker = undefined; }
 const ID = /^\d{9}$/;
 const MAX_ROUTES = 10; // 실시간 조회 노선 수
 const MAX_PAIRS = 60; // 시간표는 로컬 데이터라 더 많이 본다
@@ -55,7 +61,7 @@ export async function GET(req: Request) {
     .filter(([r, s]) => ID.test(r ?? '') && !!routeById.get(r)?.stops.includes(s)).slice(0, MAX_PAIRS);
   const pairs = parse(p.get('q')), laterPairs = parse(p.get('later'));
   const from = point(p.get('from')), to = point(p.get('to'));
-  const trips = from && to ? findTrips(from, to, index, rideMin, 20) : [];
+  const trips = from && to ? findTrips(from, to, index, rideMin, 20, walker) : [];
   const tripFirst = trips.flatMap((t) => t.legs[0].routeIds.map((r) => [r, t.legs[0].fromId]));
   const tripLater = trips.flatMap((t) => t.legs.slice(1).flatMap((l) => l.routeIds.map((r) => [r, l.fromId])));
 

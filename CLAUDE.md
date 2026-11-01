@@ -60,6 +60,7 @@ scripts/accuracy.mjs  배포된 /api/plan으로 대기 예측 정확도 측정 (
 | 정류장, 노선 | 제주 버스정보 busopen (`Station`, `Bus`, `BusLocation`) | `scripts/fetch-data.mjs`를 GitHub Actions가 매달 돌려 `data/*.json`으로 커밋. busopen은 미국 GitHub 러너에서 시간 초과가 날 수 있음(2026-10-31) |
 | 시간표 | bus.jeju.go.kr `/data/schedule/getScheduleInfo`·`getScheduleTableInfo` (robots.txt·약관 없음 확인, 사용자 승인 2026-10-31) | `scripts/fetch-schedules.mjs` → `data/schedules.json`, `scripts/build-timetable.mjs`가 주요 정류장 이름을 BIS 정류장과 맞춰 `data/timetable.json`(노선 ID별)으로. 매달, 요청 사이 0.3초 |
 | 노선 모양(지도 선) | bus.jeju.go.kr `/data/search/getLinkInfoByLineId` (POST, 시간표와 같은 사이트·승인) | `scripts/fetch-shapes.mjs` → `data/shapes.json`, 시간표 워크플로에서 매달. 정류장은 선분 번호로 맞춤(`--reindex`로 다시 계산) |
+| 걷는 길 | OpenStreetMap (Overpass API, User-Agent 필요) | `scripts/fetch-walk.mjs` → `data/walk.json`, `walk.yml` 석 달마다. 서버에서 읽기만 함(외부 호출 없음, 한도 없음). 화면 하단에 OSM 출처 표기 |
 | 실시간 위치 | 제주 버스정보 busopen `BusLocation?route=` (키 없음, 1단계에서 선택) | 노선 단위 조회, 검색 1회당 최대 10개 노선. 대기 = 남은 정류장 수 × 구간 정류장당 소요. `BusArrives`(도착 예정)는 값이 2022·2025년에 멈춰 있어 쓰지 않는다. 서버가 가끔 3초를 넘긴다 |
 
 - API 키는 Vercel 환경 변수에만 둔다. 커밋, 로그, 클라이언트 번들에 넣지 않는다 (도메인을 제한한 브라우저 키 `NEXT_PUBLIC_ODSAY_KEY`, `NEXT_PUBLIC_KAKAO_JS_KEY`만 예외).
@@ -79,7 +80,7 @@ scripts/accuracy.mjs  배포된 /api/plan으로 대기 예측 정확도 측정 (
 2. **방향**: 같은 이름의 정류장이 길 양쪽에 있다. ODsay의 `startLocalStationID`·`busLocalBlID`가 제주 BIS ID와 같아서(확인함, 2026-10-31부터 앞에 "JEB"가 붙어 와서 떼고 씀) 방향은 노선 정류장 목록으로 걸러진다. ID가 비어 있으면 대기를 추정하지 않는다(좌표로 맞추는 대응표는 만들지 않음, 우리 경로는 처음부터 BIS ID).
 3. **대기 시간**: ① 실시간 → ② 시간표·배차 간격 (간격만 있으면 그 절반) → ③ 둘 다 없으면 "추정 불가"로 순위 맨 뒤. 환승 후 두 번째 버스와 제주 밖 출발지는 항상 ②로 계산한다. 화면에 "실시간"/"시간표 기준"을 표시한다.
 4. **놓치는 버스**: 버스보다 1분 이상 먼저 정류장에 닿아야 탈 수 있다(환승은 3분). 실시간은 보통 다음 1~2대만 주므로 그 뒤는 시간표로 채운다.
-5. **걷기**: ODsay 도보 시간을 우선 쓴다. 없으면 직선거리 × 1.3 ÷ 분당 80m.
+5. **걷기**: ODsay 도보 시간을 우선 쓴다. 우리 경로의 출발·도착 걷기는 `data/walk.json`(OpenStreetMap 걷는 길, `scripts/fetch-walk.mjs`, 석 달마다 워크플로)을 따라 `lib/walk.ts`로 재고 지도에도 그 길을 그린다(오름·캠퍼스를 가로지르지 않게). 길 데이터 밖이거나 환승 걷기(200m 안)는 직선거리 × 1.3 ÷ 분당 80m.
 6. **결과**: 도착 시각 순으로 3개, 요금과 계산 기준 시각을 함께 보여준다. 30초마다 실시간·시간표만 자동으로 다시 계산한다(ODsay는 다시 부르지 않음). 첫차 전·막차 후와 경로 없음은 따로 안내한다.
 
 조절값(600m, 200m, 1.3배, 분당 80m, 1분 여유, 정류장당 평균 소요)은 `lib/config.ts` 한 곳에 상수로 모은다.

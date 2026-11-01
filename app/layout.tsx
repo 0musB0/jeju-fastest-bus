@@ -30,7 +30,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <nav className="nav"><a href="/">길찾기</a><a href="/guide">버스 안내</a><a href="/about">소개</a></nav>
         {children}
         <footer>
-          경로·요금: ODsay LAB · 버스 정보: 제주특별자치도 버스정보시스템 · 장소 검색: 카카오
+          경로·요금: ODsay LAB · 버스 정보: 제주특별자치도 버스정보시스템 · 장소 검색: 카카오 · 걷는 길: © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> 기여자
           <div className="links"><a href="/about">소개</a><a href="/guide">버스 안내</a><a href="/terms">이용약관</a><a href="/privacy">개인정보처리방침</a><a href="/contact">문의</a></div>
         </footer>
       </body>

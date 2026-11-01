@@ -1,11 +1,13 @@
-import { NEAR_STOP_M, WALK_DETOUR, WALK_M_PER_MIN, MIN_PER_STOP, TRANSFER_M, TRANSFER_PENALTY_MIN, SHORT_HOP_M } from './config.ts';
+import { NEAR_STOP_M, WALK_DETOUR, WALK_M_PER_MIN, MIN_PER_STOP, TRANSFER_M, TRANSFER_PENALTY_MIN, SHORT_HOP_M, WALK_NET_MAX_M } from './config.ts';
+import type { Walker } from './walk.ts';
 
 // 우리 데이터(정류장·노선 JSON)만으로 경로 후보를 찾는다: 직행 + 한 번 환승. ODsay 일일 한도와 상관없이 항상 돈다.
 export type Station = { id: string; name: string; lat: number; lng: number };
 export type BusRoute = { id: string; no: string; to: string; stops: string[] };
 export type Pt = { lat: number; lng: number };
-export type TripLeg = { routeIds: string[]; nos: string[]; fromId: string; fromName: string; toId: string; toName: string; stops: number; walkBeforeMin: number; rideMin: number; distM: number; fromPt: Pt; toPt: Pt; path: Pt[] };
-export type Trip = { legs: TripLeg[]; walkAfterMin: number; cost: number };
+// walkPath = 이 정류장까지 걷는 길(첫 구간은 출발지에서), walkAfterPath = 내려서 목적지까지
+export type TripLeg = { routeIds: string[]; nos: string[]; fromId: string; fromName: string; toId: string; toName: string; stops: number; walkBeforeMin: number; rideMin: number; distM: number; fromPt: Pt; toPt: Pt; path: Pt[]; walkPath?: Pt[] };
+export type Trip = { legs: TripLeg[]; walkAfterMin: number; cost: number; walkAfterPath?: Pt[] };
 // 노선의 i번째 → j번째 정류장 탑승 시간(분). 서버가 시간표로 채워 넘긴다.
 // 노선 모양: p = [위도, 경도, ...], s = 정류장마다 p의 선분 번호(k → k+1), 못 맞추면 -1 (scripts/fetch-shapes.mjs)
 export type Shapes = Record<string, { p: number[]; s: number[] }>;
@@ -86,9 +88,22 @@ type Tail = { cost: number; segs: Seg[] }; // 어떤 정류장에서 목적지�
 // 목적지 쪽에서 거꾸로 "이 정류장에서 몇 번 타면 닿는지"(tails)를 만든 뒤, 출발지에서 첫 버스를 타고 내릴 곳마다 이어 본다.
 // 순위용 비용 = 걷기 + 탑승 + 환승 걷기 + 환승 대기 어림값. 실제 대기는 화면에서 실시간·시간표로 다시 계산한다.
 // ponytail: 요청마다 전체를 훑어 0.2~0.7초. 느려지면 노선 쌍 환승표를 미리 만들어 둔다.
-export function findTrips(from: Pt, to: Pt, ix: Index, ride: RideMin = defaultRide, max = 8): Trip[] {
-  const starts = ix.near(from, NEAR_STOP_M).filter((s) => !s.name.includes('하차전용'));
-  const endList = ix.near(to, NEAR_STOP_M), ends = new Set(endList.map((s) => s.id));
+export function findTrips(from: Pt, to: Pt, ix: Index, ride: RideMin = defaultRide, max = 8, walker?: Walker): Trip[] {
+  // 출발·도착 걷기: 걷는 길 데이터가 있으면 길 따라, 없거나 그 점이 길 데이터 밖이면 직선 × 배율
+  const walkVia = (tree: ReturnType<Walker['tree']> | undefined, p: Pt, rev: boolean) => {
+    const memo = new Map<string, { min: number; path: Pt[] }>();
+    return (s: Station) => {
+      if (memo.has(s.id)) return memo.get(s.id)!;
+      const r = tree?.to(s);
+      const w = r ? { min: r.m / WALK_M_PER_MIN, path: rev ? [...r.path].reverse() : r.path } : { min: walkMin(p, s), path: rev ? [s, p] : [p, s] };
+      memo.set(s.id, w);
+      return w;
+    };
+  };
+  const walkFrom = walkVia(walker?.tree(from, WALK_NET_MAX_M), from, false);
+  const walkTo = walkVia(walker?.tree(to, WALK_NET_MAX_M), to, true);
+  const starts = ix.near(from, NEAR_STOP_M).filter((s) => !s.name.includes('하차전용') && isFinite(walkFrom(s).min));
+  const endList = ix.near(to, NEAR_STOP_M).filter((s) => isFinite(walkTo(s).min)), ends = new Set(endList.map((s) => s.id));
   if (!starts.length || !ends.size) return [];
   const startIds = new Set(starts.map((s) => s.id));
   const pt = (id: string) => ix.byId.get(id)!;
@@ -113,7 +128,7 @@ export function findTrips(from: Pt, to: Pt, ix: Index, ride: RideMin = defaultRi
   // 버스 한 번으로 목적지까지
   const t1 = new Map<string, Map<string, Tail>>();
   for (const e of endList) for (const [r, j] of ix.onStation.get(e.id) ?? []) {
-    const wa = walkMin(e, to);
+    const wa = walkTo(e).min;
     for (let m = 0; m < j; m++) if (!ends.has(r.stops[m]) && boardable(r.stops[m]) && !passesStart(r, m)) put(t1, r.stops[m], r, ride(r, m, j) + wa, () => [{ r, m, j }]);
   }
   // 버스 두 번으로 목적지까지: 노선 b의 n번째에서 내려 근처 정류장의 t1로 갈아탄다
@@ -135,7 +150,9 @@ export function findTrips(from: Pt, to: Pt, ix: Index, ride: RideMin = defaultRi
   const best = new Map<string, Trip>(); // 같은 버스 번호 조합은 가장 빠른 것 하나
   const build = (segs: Seg[], w0: number, cost: number): Trip => {
     const legs = segs.map((g, n) => leg(ix, g.r, g.m, g.j, n ? walkMin(pt(segs[n - 1].r.stops[segs[n - 1].j]), pt(g.r.stops[g.m])) : w0, ride));
-    return { legs, walkAfterMin: walkMin(pt(segs.at(-1)!.r.stops[segs.at(-1)!.j]), to), cost };
+    legs[0].walkPath = walkFrom(pt(legs[0].fromId)).path; // 환승 걷기(200m 안)는 직선으로 둔다
+    const end = walkTo(pt(legs.at(-1)!.toId));
+    return { legs, walkAfterMin: end.min, walkAfterPath: end.path, cost };
   };
   // 버스 세 대 중 가운데를 한두 정류장만 타는 경로(예: 181 → 하례에서 531 1분 → 611)는 사람이 타지 않으니 뺀다.
   // 마지막 구간은 짧아도 남긴다: 목적지까지 그 버스밖에 없을 수 있다.
@@ -146,11 +163,11 @@ export function findTrips(from: Pt, to: Pt, ix: Index, ride: RideMin = defaultRi
     if ((best.get(key)?.cost ?? Infinity) > cost) best.set(key, build(segs, w0, cost));
   };
   for (const s of starts) {
-    const w0 = walkMin(from, s);
+    const w0 = walkFrom(s).min;
     for (const [a, i] of ix.onStation.get(s.id) ?? []) {
       let last = a.stops.length;
       for (let j = i + 1; j < a.stops.length; j++) if (ends.has(a.stops[j])) {
-        keep([{ r: a, m: i, j }], w0, w0 + ride(a, i, j) + walkMin(pt(a.stops[j]), to));
+        keep([{ r: a, m: i, j }], w0, w0 + ride(a, i, j) + walkTo(pt(a.stops[j])).min);
         last = j; // 목적지 근처에 닿기 전의 정류장에서만 갈아탄다
         break;
       }
