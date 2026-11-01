@@ -4,9 +4,11 @@ export const metadata = { title: '제주 버스 노선', description: '제주 �
 
 // 번호(201-11의 201)별로 묶어 첫 자리로 나눈다. 정류장이 1개뿐인 가상 노선(수요응답형·차고지)은 뺀다.
 const bases = [...new Set(routes.filter((r) => r.stops.length > 1).map((r) => r.no.split('-')[0]))].sort((a, b) => Number(a) - Number(b));
+// 3000번대(제주시)·5000번대(서귀포)는 심야버스: 밤 10시 넘어 다닌다 (버스정보시스템 표 제목 "(심야)")
+const LATE: Record<string, string> = { 3000: ' · 심야버스 (제주시, 밤 10시 이후)', 5000: ' · 심야버스 (서귀포, 밤 10시 이후)' };
 const band = (b: string) => (Number(b) >= 1000 ? Math.floor(Number(b) / 1000) * 1000 : Math.floor(Number(b) / 100) * 100);
 const groups = Object.entries(Object.groupBy(bases, band)).sort(([a], [b]) => Number(a) - Number(b))
-  .map(([g, nos]) => [Number(g) ? `${g}번대` : '100번 아래', nos] as const);
+  .map(([g, nos]) => [Number(g) ? `${g}번대${LATE[g] ?? ''}` : '100번 아래', nos] as const);
 
 export default function RouteList() {
   return (

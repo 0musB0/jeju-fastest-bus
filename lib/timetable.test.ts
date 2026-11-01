@@ -142,3 +142,10 @@ test('loose: 글자만 겹치는 경유 열의 X는 무시하고, 이름이 그�
   assert.deepEqual(tripsFor(t, plain, '', true).map((r) => r[0][1]), [360]);
   assert.deepEqual(tripsFor(t, viaSchool, '', true).map((r) => r[0][1]), [380]);
 });
+
+test('심야버스 00:25 출발은 전날 밤 운행으로 (첫차 22:15, 막차 00:25)', () => {
+  const e = buildEntry([[[0, 1335], [20, 1365]], [[0, 25], [20, 55]]])!;
+  assert.deepEqual(e.t, [1335, 1465]);
+  assert.equal(firstAt(e, 0), 1335);
+  assert.deepEqual(arrivals(e, 0, 1430, 60), [35]); // 23:50 → 00:25 버스는 35분 뒤
+});

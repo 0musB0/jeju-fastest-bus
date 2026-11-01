@@ -67,6 +67,7 @@ export default async function RoutePage({ params }: { params: Promise<{ base: st
     <main className="doc">
       <p><a href="/routes">← 모든 노선</a></p>
       <h1>{base}번 버스</h1>
+      {/^[35]\d{3}$/.test(base) && <p className="warn">심야버스예요. 밤 10시 넘어서만 다니고, 낮에는 운행하지 않아요.</p>}
       <p>같은 번호라도 가지 번호(-1, -2)마다 방향과 경유지가 달라요. 눌러서 정류장과 시간표를 보세요. 정류장 옆 분은 첫 정류장에서 걸리는 시간이에요.</p>
       {vs.map((r) => {
         const key = tt[r.id]?.n === r.stops.length ? tt[r.id].t.join() : '';
