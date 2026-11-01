@@ -1,7 +1,15 @@
 import './globals.css';
 
 export const viewport = { width: 'device-width', initialScale: 1 };
-export const metadata = { title: '혼저 탑서 · 제주 가장 빠른 버스', description: '목적지에 가장 일찍 도착하는 제주 버스를 찾아줍니다' };
+const title = '혼저 탑서 · 제주 가장 빠른 버스';
+const description = '가까운 정류장이 아니라 목적지에 가장 먼저 닿는 제주 버스를 찾아줘요';
+// 아이콘·미리보기 이미지는 app/icon.svg, apple-icon.png, opengraph-image.png 파일로 Next가 자동으로 넣는다
+export const metadata = {
+  metadataBase: new URL('https://jeju-fastest-bus.vercel.app'),
+  title, description,
+  openGraph: { title, description, siteName: '혼저 탑서', locale: 'ko_KR', type: 'website', url: '/' },
+  twitter: { card: 'summary_large_image', title, description },
+};
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
