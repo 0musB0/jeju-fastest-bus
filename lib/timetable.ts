@@ -53,7 +53,13 @@ export function sameStop(col: string, stop: string): boolean {
 export function tripsFor(tab: Tab, stops: string[], no = ''): Trip[] {
   const noCol = tab.cols.findIndex((c) => /노선번호/.test(c));
   const base = no.split('-')[0];
-  const cand: (number[] | null)[] = tab.cols.map((c) => (/노선번호|구분|비\s*고/.test(c) || !c ? null : stops.flatMap((s, o) => (sameStop(c, s) ? [o] : []))));
+  // 한 열에 맞는 정류장 이름이 여럿이면 다른 이름에 말을 덧붙인 이름은 뺀다(숫자 붙은 "공항3"·"동광환승정류장1"은 그대로) ("제주대" 열 → 제주대학교, 제주대학교병원 아님)
+  const cand: (number[] | null)[] = tab.cols.map((c) => {
+    if (/노선번호|구분|비\s*고/.test(c) || !c) return null;
+    const hit = stops.flatMap((s, o) => (sameStop(c, s) ? [o] : []));
+    const core = (o: number) => split(norm(stops[o]))[0];
+    return hit.filter((o) => norm(c).includes(core(o)) || !hit.some((q) => core(q) !== core(o) && core(o).startsWith(core(q)) && !/^\d/.test(core(o).slice(core(q).length))));
+  });
   const trips: Trip[] = [];
   for (const row of tab.rows) {
     const rowNo = noCol >= 0 ? (row[noCol] ?? '').match(/^(\d+)/)?.[1] : undefined;

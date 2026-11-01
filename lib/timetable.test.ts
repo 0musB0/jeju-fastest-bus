@@ -105,3 +105,9 @@ test('노선 종점 열이 X인 운행은 번호가 같아도 그 노선에 붙�
   assert.equal(tripsFor(t, toYeongju, '356-3').length, 1);
   assert.equal(tripsFor(t, toUniv, '356-1').length, 2);
 });
+
+test('"제주대" 열은 제주대학교에 맞추고 제주대학교병원에는 맞추지 않는다 (302번 여중고 → 제주대 35분으로 나오던 문제)', () => {
+  const t = { cols: ['공항', '제주시청', '제주대'], rows: [['07:00', '07:19', '07:38']] };
+  const stops = ['공항', 'a', '제주시청', 'b', '제주대학교병원', '제주대학교'];
+  assert.deepEqual(tripsFor(t, stops), [[[0, 420], [2, 439], [5, 458]]]);
+});
