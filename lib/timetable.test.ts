@@ -92,3 +92,9 @@ test('한 표에 여러 번호(291·292)가 섞이면 같은 번호의 행만, �
   assert.deepEqual(tripsFor(t, stops, '43-2').map((x) => x[0][1]), [410]);
   assert.deepEqual(tripsFor(t, stops, '44-1').map((x) => x[0][1]), [420]);
 });
+
+test('기준 정류장 사이가 시속 60km보다 빠르면(이름이 같은 먼 정류장에 맞춤) 그 점을 뺀다', () => {
+  const cum = [0, 3000, 6000, 70000]; // 3번째 정류장은 70km 떨어짐
+  const e = buildEntry([[[0, 600], [1, 606], [2, 612], [3, 640]]], cum)!;
+  assert.deepEqual(e.p, [0, 0, 1, 6, 2, 12]);
+});

@@ -42,12 +42,10 @@ export type Headways = Record<string, number>;
 // 시간표: "노선:정류장" → 지금부터 몇 분 뒤 오는지 / 오늘 운행이 끝났으면 첫차 시각(자정부터 분)
 export type Schedules = { scheduled?: Record<string, number[]>; firstBus?: Record<string, number> };
 
-// 실시간으로 조회할 "노선:정류장" 쌍. 빠른 경로의 첫 버스 먼저, 그다음 환승 버스, 노선 max개까지.
-export function realtimeKeys(routes: Route[], max = 10): string[] {
+// 서버에 보낼 "노선:정류장" 쌍. first = 첫 버스(실시간 대상), 아니면 환승 버스(시간표만 씀).
+export function rideKeys(routes: Route[], first: boolean): string[] {
   const keyOf = (ride: Route['rides'][number]) => ride.routeIds.filter(Boolean).map((id) => `${id}:${ride.stationId}`);
-  const keys = [...routes.flatMap((r) => keyOf(r.rides[0])), ...routes.flatMap((r) => r.rides.slice(1).flatMap(keyOf))];
-  const routeIds = [...new Set(keys.map((k) => k.split(':')[0]))].slice(0, max);
-  return [...new Set(keys)].filter((k) => routeIds.includes(k.split(':')[0]));
+  return [...new Set(routes.flatMap((r) => (first ? [r.rides[0]] : r.rides.slice(1)).flatMap(keyOf)))];
 }
 
 // 남은 정류장 수 → 첫 구간의 "몇 분 뒤 버스", 모든 구간의 배차 간격. 같은 구간을 달리는 노선(lane)이 여럿이면 합친다.

@@ -2,10 +2,12 @@
 // 실행: node --experimental-strip-types scripts/build-timetable.mjs
 import { readFile, writeFile } from 'node:fs/promises';
 import { buildEntry, tripsFor } from '../lib/timetable.ts';
+import { distM } from '../lib/direct.ts';
 
 const read = async (f) => JSON.parse(await readFile(f, 'utf8'));
 const [tabs, routes, stations] = await Promise.all(['data/schedules.json', 'data/routes.json', 'data/stations.json'].map(read));
 const nameOf = new Map(stations.map((s) => [s.id, s.name]));
+const byId = new Map(stations.map((s) => [s.id, s]));
 
 // 같은 방향 표가 시행일만 다르게 여러 개 있으면 가장 최근 것만 쓴다
 const day = (d) => (d ? new Date(d.replaceAll('.', '-')).getTime() : 0);
@@ -28,9 +30,11 @@ for (const ts of byBase.values()) for (const t of ts) {
 const out = {};
 for (const r of routes) {
   const stops = r.stops.map((id) => nameOf.get(id) ?? '');
+  const cum = r.stops.map((id, k) => { const a = byId.get(r.stops[k - 1]), b = byId.get(id); return a && b ? distM(a, b) : 0; });
+  cum.forEach((d, k) => k && (cum[k] += cum[k - 1]));
   const tabsOf = byBase.get(r.no.split('-')[0]) ?? [];
   // 표의 노선번호로 거른 행 먼저. BIS 번호가 표와 다르면(BIS "800-51" = 표 "801번") 번호 없이 이름 순서로만 맞춘다
-  const e = buildEntry(tabsOf.flatMap((t) => tripsFor(t, stops, r.no))) ?? buildEntry(tabsOf.flatMap((t) => tripsFor(t, stops)));
+  const e = buildEntry(tabsOf.flatMap((t) => tripsFor(t, stops, r.no)), cum) ?? buildEntry(tabsOf.flatMap((t) => tripsFor(t, stops)), cum);
   if (e) out[r.id] = e;
 }
 await writeFile('data/timetable.json', JSON.stringify(out));

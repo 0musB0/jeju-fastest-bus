@@ -66,3 +66,13 @@ test('같은 번호의 다른 운행 계통도 한 구간에 함께 붙인다 (�
   const r = findTrips({ lat: 33.5, lng: 126.5 }, { lat: 33.5202, lng: 126.5 }, indexData(stations, routes));
   assert.deepEqual(r[0].legs[0].routeIds.sort(), ['1', '2']);
 });
+
+test('많이 돌아가는 노선은 같은 두 정류장을 이어도 한 구간에 묶지 않는다', () => {
+  const routes = [
+    { id: '1', no: '100', to: '', stops: ['A', 'B', 'C'] },
+    { id: '2', no: '300', to: '', stops: ['A', 'B', 'C'] },
+  ];
+  const ride = (r: { id: string }, i: number, j: number) => (j - i) * (r.id === '2' ? 20 : 3); // 300번은 우회해서 40분
+  const r = findTrips({ lat: 33.5, lng: 126.5 }, { lat: 33.5202, lng: 126.5 }, indexData(stations, routes), ride);
+  assert.deepEqual(r[0].legs[0].routeIds, ['1']);
+});

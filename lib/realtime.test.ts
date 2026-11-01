@@ -22,7 +22,7 @@ test('결과 코드가 00이 아니면 오류 이유', () => {
   assert.equal(parseBusLocation('<html>오류</html>').ok, false);
 });
 
-import { applyRealtime, realtimeKeys, tripsToRoutes, headwayMin } from './realtime.ts';
+import { applyRealtime, rideKeys, tripsToRoutes, headwayMin } from './realtime.ts';
 import type { Route } from './odsay.ts';
 
 const route: Route = {
@@ -32,7 +32,7 @@ const route: Route = {
 };
 
 test('실시간 쌍과 분 변환: 두 노선을 합쳐 가까운 순, 정류장당 3분', () => {
-  assert.deepEqual(realtimeKeys([route]), ['405136501:405000153', '405146501:405000153']);
+  assert.deepEqual(rideKeys([route], true), ['405136501:405000153', '405146501:405000153']);
   const r = applyRealtime(route, { '405136501:405000153': [5], '405146501:405000153': [2] });
   assert.deepEqual(r.candidate.legs[0].nextBusesMin, [6, 15]);
   assert.deepEqual(applyRealtime(route, { '405136501:405000153': { error: 'x' } }), route);
@@ -59,7 +59,8 @@ test('배차 간격: 노선 길이 × 정류장당 소요 ÷ 버스 수, 환승 
   assert.equal(headwayMin([{ bus: false }]), undefined);
   const transfer: Route = { ...route, candidate: { legs: [route.candidate.legs[0], { walkBeforeMin: 1, rideMin: 5 }], walkAfterMin: 0 },
     rides: [route.rides[0], { busNos: ['500'], routeIds: ['405150001', '405150002'], stationId: '405000200', from: '시청', to: '노형', stops: 3 }] };
-  assert.deepEqual(realtimeKeys([transfer]), ['405136501:405000153', '405146501:405000153', '405150001:405000200', '405150002:405000200']);
+  assert.deepEqual(rideKeys([transfer], true), ['405136501:405000153', '405146501:405000153']);
+  assert.deepEqual(rideKeys([transfer], false), ['405150001:405000200', '405150002:405000200']);
   const r = applyRealtime(transfer, { '405136501:405000153': [1] }, { '405150001': 20, '405150002': 20 });
   assert.equal(r.candidate.legs[1].intervalMin, 10); // 두 노선 합쳐 10분 간격
 });

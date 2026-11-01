@@ -4,7 +4,7 @@ import { arrivalMin, kstClock12 as kstClock } from '@/lib/eta';
 import { BOARD_MARGIN_MIN } from '@/lib/config';
 import { kstMinutes } from '@/lib/timetable';
 import { parseOdsay, type Route } from '@/lib/odsay';
-import { applyRealtime, tripsToRoutes, realtimeKeys, type Headways, type PlanResults, type Schedules } from '@/lib/realtime';
+import { applyRealtime, tripsToRoutes, rideKeys, type Headways, type PlanResults, type Schedules } from '@/lib/realtime';
 import type { Trip } from '@/lib/direct';
 import RouteMap from './RouteMap';
 
@@ -15,13 +15,18 @@ const ODSAY_KEY = process.env.NEXT_PUBLIC_ODSAY_KEY ?? '';
 // 크롬이 뒤에 둔 탭을 지웠다가 다시 열면 페이지가 새로 뜬다. 그때 출발·도착을 되살린다 (탭을 닫으면 사라짐).
 const SAVED = 'trip';
 const loadTrip = (): { from: Place | null; to: Place | null } | null => {
-  try { return JSON.parse(sessionStorage.getItem(SAVED) ?? 'null'); } catch { return null; }
+  // "현재 위치"는 되살리지 않는다: 그새 움직였을 수 있으니 다시 묻는다
+  try { const t = JSON.parse(sessionStorage.getItem(SAVED) ?? 'null'); return t && { ...t, from: t.from?.name === '현재 위치' ? null : t.from }; } catch { return null; }
 };
 // 도착 칸 안내 문구: 제주말, 페이지를 열 때마다 바뀐다
 const ASKS = ['어디 감수꽈?', '어드레 가카마씸?', '오늘은 어드레 감서?'];
 // 버스 번호만: "300(신사동)", "365-21" → "300", "365" (같은 번호는 하나로)
 // 자정부터 분 → "5:50 AM"
 const clock12 = (m: number) => `${Math.floor(m / 60) % 12 || 12}:${String(m % 60).padStart(2, '0')} ${m % 1440 < 720 ? 'AM' : 'PM'}`;
+// 경로 구분 열쇠: 구간마다 탈 정류장과 버스
+const routeKey = (r: { rides: { from: string; busNos: string[] }[] }) => r.rides.map((x) => `${x.from}:${x.busNos.join('/')}`).join('|');
+// 버스 번호는 4개까지, 나머지는 "+N"
+const chips = (nos: string[]) => [...nos.slice(0, 4).map((n) => <span key={n} className="chip">{n}</span>), ...(nos.length > 4 ? [<span key="+" className="chip more">+{nos.length - 4}</span>] : [])];
 const busNumbers = (nos: string[]) => [...new Set(nos.map((n) => n.replace(/\(.*\)/, '').replace(/-\d+$/, '').trim()))];
 // "하귀환승정류장(하귀하나로마트)" → ["하귀환승정류장", "하귀하나로마트"]. 괄호는 길 건너 같은 이름 정류장을 가리는 힌트라 작게 남긴다.
 const splitStop = (name: string) => {
@@ -135,7 +140,7 @@ export default function Home() {
   const [routes, setRoutes] = useState<Ranked[]>([]);
   const [at, setAt] = useState<Date | null>(null);
   const [msg, setMsg] = useState('');
-  const [sel, setSel] = useState(0);
+  const [selKey, setSelKey] = useState(''); // 고른 경로: 30초 갱신으로 순서가 바뀌어도 같은 경로를 따라간다
 
   const odsayErr = useRef('');
   const odsayRef = useRef<Route[] | null>(null); // 출발·도착이 같으면 ODsay 경로는 다시 부르지 않는다 (일일 한도)
@@ -182,7 +187,7 @@ export default function Home() {
       let trips: Trip[] = [];
       try {
         const pathKey = (x: Route['rides'][number]) => `${x.routeIds[0]}:${x.stationId}:${x.stops}`;
-        const q = new URLSearchParams({ q: realtimeKeys(odsay, 30).join(','), from: `${from.lat},${from.lng}`, to: `${to.lat},${to.lng}`,
+        const q = new URLSearchParams({ q: rideKeys(odsay, true).slice(0, 30).join(','), later: rideKeys(odsay, false).slice(0, 30).join(','), from: `${from.lat},${from.lng}`, to: `${to.lat},${to.lng}`,
           paths: refresh ? '' : [...new Set(odsay.slice(0, 6).flatMap((o) => o.rides.map(pathKey)))].join(',') });
         const r = await fetch(`/api/plan?${q}`).then((r) => r.json());
         results = r.results ?? {};
@@ -196,9 +201,8 @@ export default function Home() {
         /* 첫 검색: ODsay 경로만, 대기는 추정 불가로 표시 */
       }
       if (stale()) return;
-      // ODsay 경로가 있으면, 그보다 이동만 1.5배 넘게 걸리는 우리 후보는 뺀다
-      const bestOdsay = odsay[0]?.odsayMin ?? Infinity;
-      const byTime = [...odsay, ...tripsToRoutes(trips, odsay).filter((r) => r.odsayMin <= bestOdsay * 1.5)];
+      // 이동 시간만으로 거르지 않는다: 대기까지 더한 도착 시각으로만 비교한다
+      const byTime = [...odsay, ...tripsToRoutes(trips, odsay)];
       if (!byTime.length) return setMsg(odsayErr.current || '버스로 가는 경로가 없어요. 걸어가기 가까운 거리일 수 있어요.');
       // 대기를 알 수 있는 후보가 먼저, 그 안에서 도착이 빠른 순. 모르면 이동 시간 순으로 맨 뒤.
       const ranked = byTime
@@ -206,7 +210,7 @@ export default function Home() {
         .map((r) => ({ ...r, eta: arrivalMin(r.candidate) }))
         .sort((a, b) => (a.eta ? 0 : 1) - (b.eta ? 0 : 1) || (a.eta?.min ?? a.odsayMin) - (b.eta?.min ?? b.odsayMin));
       setRoutes(ranked.slice(0, 3));
-      if (!refresh) setSel(0);
+      if (!refresh) setSelKey('');
       setAt(new Date());
       setMsg('');
       live.current = true;
@@ -231,6 +235,7 @@ export default function Home() {
     return () => clearInterval(id);
   }, [from, to]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const sel = Math.max(0, routes.findIndex((r) => routeKey(r) === selKey));
   return (
     <main>
       <h1>
@@ -254,6 +259,7 @@ export default function Home() {
       )}
       {from && to && routes[sel] && <RouteMap from={from} to={to} rides={routes[sel].rides} />}
       {routes.map((r, i) => {
+        const key = routeKey(r);
         const walk = r.candidate.legs.reduce((s, l) => s + l.walkBeforeMin, r.candidate.walkAfterMin);
         const leg = r.candidate.legs[0];
         // 걸어가서 탈 수 있는 첫 버스
@@ -261,10 +267,12 @@ export default function Home() {
         const planned = leg.timetableMin?.find((b) => b >= leg.walkBeforeMin + BOARD_MARGIN_MIN);
         const [stop, side] = splitStop(r.rides[0].from);
         return (
-          <article key={i} className={`box result${i === 0 && r.eta ? ' best' : ''}${i === sel ? ' sel' : ''}`} style={{ '--i': i } as React.CSSProperties} onClick={() => setSel(i)}>
+          <article key={key} className={`box result${i === 0 && r.eta ? ' best' : ''}${i === sel ? ' sel' : ''}`} style={{ '--i': i } as React.CSSProperties}
+            role="button" tabIndex={0} aria-pressed={i === sel} onClick={() => setSelKey(key)}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelKey(key); } }}>
             <div className="row" style={{ alignItems: 'flex-start' }}>
               <div style={{ flex: 1 }}>
-                <div className="chips">{busNumbers(r.rides[0].busNos).map((n) => <span key={n} className="chip">{n}</span>)}</div>
+                <div className="chips">{chips(busNumbers(r.rides[0].busNos))}</div>
                 <div className="board"><b>{stop}</b>에서 타요{side && <div className="muted side">{side} 쪽</div>}</div>
               </div>
               <div className="arrive">
@@ -274,7 +282,7 @@ export default function Home() {
             </div>
             <div className="wait">
               {next !== undefined ? <span className="badge live">버스 {Math.max(0, Math.round(next))}분 뒤 도착</span>
-                : planned !== undefined ? <span className="badge">시간표 기준 {Math.round(planned)}분 뒤</span>
+                : planned !== undefined ? <span className="badge">{planned > 60 ? `다음 차 ${kstClock(at!, planned)}` : `시간표 기준 ${Math.round(planned)}분 뒤`}</span>
                 : r.eta ? <span className="badge">약 {Math.round(leg.intervalMin ?? 0)}분 간격 (추정)</span>
                 : r.firstBus !== undefined ? <span className="badge warnb">{r.firstBus > kstMinutes(at!) ? '첫차 전' : '오늘 운행 끝'} · 첫차 {clock12(r.firstBus)}</span>
                 : <span className="badge warnb">{r.noBusNow ? '지금 운행 중인 버스 없음' : '도착 정보 없음'}</span>}

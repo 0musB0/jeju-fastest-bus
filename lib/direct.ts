@@ -19,6 +19,8 @@ export function distM(a: Pt, b: Pt): number {
 }
 export const walkMin = (a: Pt, b: Pt) => (distM(a, b) * WALK_DETOUR) / WALK_M_PER_MIN;
 const base = (no: string) => no.split('-')[0];
+// 한 구간에 묶어도 되는 탑승 시간: 가장 빠른 노선의 1.2배 + 2분 이내
+const similar = (m: number, best: number) => m <= best * 1.2 + 2;
 
 // 정류장·노선 색인. 서버에서 한 번만 만든다.
 export function indexData(stations: Station[], routes: BusRoute[], shapes: Shapes = {}) {
@@ -169,15 +171,17 @@ export function findTrips(from: Pt, to: Pt, ix: Index, ride: RideMin = defaultRi
     const key = t.legs.map((l) => `${l.fromId}>${l.toId}`).join('|');
     const o = merged.get(key);
     if (!o) merged.set(key, t);
-    else t.legs.forEach((l, n) => l.routeIds.forEach((id, q) => { if (!o.legs[n].routeIds.includes(id)) o.legs[n].routeIds.push(id), o.legs[n].nos.push(l.nos[q]); }));
+    else t.legs.forEach((l, n) => { if (similar(l.rideMin, o.legs[n].rideMin)) l.routeIds.forEach((id, q) => { if (!o.legs[n].routeIds.includes(id)) o.legs[n].routeIds.push(id), o.legs[n].nos.push(l.nos[q]); }); });
   }
   const out = [...merged.values()].slice(0, max);
   // 같은 두 정류장을 잇는 다른 노선도 모두 붙인다. 번호별로 하나만 남겨서 202-5·202-54처럼 같은 번호의 다른 운행 계통이 빠지면,
-  // 남은 하나가 지금 안 다닐 때 경로 전체가 "추정 불가"나 몇 시간 대기가 된다. 탑승 시간은 처음 찾은 노선 값을 쓴다.
+  // 남은 하나가 지금 안 다닐 때 경로 전체가 "추정 불가"나 몇 시간 대기가 된다.
+  // 탑승 시간은 처음 찾은 노선 값을 함께 쓰므로, 많이 돌아가는 노선(예: 직행 15분 vs 우회 45분)은 붙이지 않는다.
   // 환승 뒤 구간에는 출발지 근처를 이미 지나온 노선(처음부터 타면 되는 버스)은 붙이지 않는다.
   for (const t of out) t.legs.forEach((l, n) => {
     for (const [r, i] of ix.onStation.get(l.fromId) ?? []) {
-      if (!l.routeIds.includes(r.id) && r.stops.indexOf(l.toId, i + 1) > i && !(n && passesStart(r, i))) l.routeIds.push(r.id), l.nos.push(r.no);
+      const j = r.stops.indexOf(l.toId, i + 1);
+      if (!l.routeIds.includes(r.id) && j > i && !(n && passesStart(r, i)) && similar(ride(r, i, j), l.rideMin)) l.routeIds.push(r.id), l.nos.push(r.no);
     }
   });
   return out;

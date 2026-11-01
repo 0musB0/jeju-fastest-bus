@@ -107,7 +107,8 @@ export function offsetAt(p: number[], ord: number): number {
 const median = (a: number[]) => [...a].sort((x, y) => x - y)[Math.floor(a.length / 2)];
 
 // 운행 목록 → 노선 하나의 시간표. 가장 흔한 출발 순번을 기준으로 정류장별 소요의 중앙값을 쓴다.
-export function buildEntry(trips: Trip[]): Entry | null {
+// cum = 노선 정류장별 누적 거리(m, 정류장 사이 직선 합). 주면 기준 정류장 사이가 분당 1km(시속 60km)보다 빠른 곳을 거른다.
+export function buildEntry(trips: Trip[], cum?: number[]): Entry | null {
   if (!trips.length) return null;
   const firsts = trips.map((t) => t[0][0]);
   const count = (f: number) => firsts.filter((g) => g === f).length;
@@ -115,6 +116,12 @@ export function buildEntry(trips: Trip[]): Entry | null {
   const offs = new Map<number, number[]>();
   for (const t of trips.filter((t) => t[0][0] === ref)) for (const [o, m] of t) offs.set(o, [...(offs.get(o) ?? []), m - t[0][1]]);
   const p = [...offs].sort((a, b) => a[0] - b[0]).flatMap(([o, ms]) => [o, median(ms)]);
+  // 이름이 같은 다른 정류장(예: 공항 → 서귀포 중앙로터리 40분)에 맞춘 기준점은 뒤쪽 점을 뺀다.
+  // 단순화: 앞쪽 점이 틀린 경우는 못 가린다 (뒤가 줄줄이 빠져 노선 전체가 버려짐)
+  for (let k = 2; cum && k < p.length; ) {
+    if (cum[p[k]] - cum[p[k - 2]] > 1000 * Math.max(p[k + 1] - p[k - 1], 0.5)) p.splice(k, 2);
+    else k += 2;
+  }
   // 이름을 잘못 맞춘 노선 거르기: 소요가 거꾸로 가거나 정류장당 0.5~6분(도심급행은 정류장이 드물어 4분을 넘음)을 벗어나면 버린다
   const n = p.length / 2, rate = (p[2 * n - 1] - p[1]) / (p[2 * n - 2] - p[0] || 1);
   if (n < 2 || rate < 0.5 || rate > 6 || p.some((v, i) => i % 2 === 1 && i > 1 && v < p[i - 2])) return null;

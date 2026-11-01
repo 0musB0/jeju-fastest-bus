@@ -48,18 +48,21 @@ async function busLocation(r: string) {
 
 export async function GET(req: Request) {
   const p = new URL(req.url).searchParams;
-  const pairs = (p.get('q') ?? '')
-    .split(',')
-    .map((x) => x.split(':'))
-    .filter(([r, s]) => ID.test(r ?? '') && !!routeById.get(r)?.stops.includes(s))
-    .slice(0, MAX_PAIRS);
+  // q = ODsay 경로의 첫 버스, later = 환승 버스 (환승 버스는 시간표만 쓰므로 실시간 조회는 안 함)
+  const parse = (v: string | null) => (v ?? '').split(',').map((x) => x.split(':'))
+    .filter(([r, s]) => ID.test(r ?? '') && !!routeById.get(r)?.stops.includes(s)).slice(0, MAX_PAIRS);
+  const pairs = parse(p.get('q')), laterPairs = parse(p.get('later'));
   const from = point(p.get('from')), to = point(p.get('to'));
   const trips = from && to ? findTrips(from, to, index, rideMin, 20) : [];
   const tripFirst = trips.flatMap((t) => t.legs[0].routeIds.map((r) => [r, t.legs[0].fromId]));
   const tripLater = trips.flatMap((t) => t.legs.slice(1).flatMap((l) => l.routeIds.map((r) => [r, l.fromId])));
 
-  // 실시간 노선은 ODsay 후보의 첫 버스 먼저, 그다음 우리 후보의 첫 버스, 합쳐서 최대 10개
-  const routeIds = [...new Set([...pairs.map(([r]) => r), ...tripFirst.map(([r]) => r)])].slice(0, MAX_ROUTES);
+  // 실시간 10칸은 모든 후보의 첫 버스로만 채운다. 한 구간에 노선이 여럿 붙어 있으므로 후보마다 하나씩 돌아가며 고른다.
+  const lists = [...pairs.map(([r]) => [r]), ...trips.map((t) => t.legs[0].routeIds)];
+  const routeIds: string[] = [];
+  for (let k = 0; routeIds.length < MAX_ROUTES && lists.some((l) => l.length > k); k++) {
+    for (const l of lists) if (l[k] && !routeIds.includes(l[k]) && routeIds.length < MAX_ROUTES) routeIds.push(l[k]);
+  }
   const allPairs = [...pairs, ...tripFirst].filter(([r]) => routeIds.includes(r));
   // 제주 서버는 동시에 여러 개를 보내면 전부 3초를 넘긴다(실측). 2개씩 나눠 보낸다.
   const locs = new Map<string, Awaited<ReturnType<typeof busLocation>>>();
@@ -78,14 +81,15 @@ export async function GET(req: Request) {
     const h = loc.ok ? headwayMin(loc.stops) : undefined;
     if (h) headways[r] = h;
   }
-  // 시간표 (KST 기준): 앞으로 3시간 안에 오는 버스, 없으면 첫차 시각
+  // 시간표 (KST 기준): 오늘 남은 버스(가까운 12대, 자정 넘긴 막차 포함), 오늘 더 없으면 첫차 시각
   const date = new Date(), now = kstMinutes(date), today = kstDay(date);
   const nextDay = now >= 720 ? kstDay(date, 1) : today; // 막차 뒤 첫차는 오후면 내일 요일로
   const scheduled: Record<string, number[]> = {}, firstBus: Record<string, number> = {};
-  for (const [r, s] of [...pairs, ...tripFirst, ...tripLater]) {
+  for (const [r, s] of [...pairs, ...laterPairs, ...tripFirst, ...tripLater]) {
     const e = timetable[r], ord = routeById.get(r)?.stops.indexOf(s) ?? -1;
     if (!e || ord < 0) continue;
-    const a = arrivals(e, ord, now, 180, today);
+    // 낮에 3시간 넘게 비는 노선도 많다(시골·관광지). 3시간 안에 없다고 "운행 끝"으로 보지 않는다.
+    const a = arrivals(e, ord, now, Math.max(180, 1560 - now), today).slice(0, 12);
     if (a.length) scheduled[`${r}:${s}`] = a;
     else {
       const f = firstAt(e, ord, nextDay);
