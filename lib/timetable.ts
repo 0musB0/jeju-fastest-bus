@@ -25,7 +25,7 @@ export function parseTime(cell: string): number | null {
 }
 
 const norm = (s: string) =>
-  s.replace(/<[^>]*>/g, '').replace(/[\s·.]/g, '').replace(/방향|방면/g, '').replace('로타리', '로터리').replace(/^(제주)?터미널/, '제주버스터미널')
+  s.replace(/<[^>]*>/g, '').replace(/\(경유\)/g, '').replace(/[\s·.]/g, '').replace(/방향|방면/g, '').replace('로타리', '로터리').replace(/^(제주)?터미널/, '제주버스터미널')
     .replace(/초교/g, '초등학교').replace(/종점$/, '');
 const split = (s: string) => {
   const m = s.match(/^([^(]*)\((.*)\)$/);
@@ -48,10 +48,15 @@ export function sameStop(col: string, stop: string): boolean {
 // 표의 각 행 중 이 노선(정류장 이름 순서)의 운행인 것만 골라 [순번, 시각] 기준점 목록으로.
 // 노선에 없는 이름의 시각은 건너뛴다: BIS 노선이 표의 노선을 토막 낸 것이 많고, 표의 이름이 줄임말("제주여중고")이라 못 맞추는 곳도 있다.
 // 기준점이 노선 길이의 절반 이상을 덮고, 노선에 있는 정류장을 X(안 감)로 표시하지 않아야 한다.
-export function tripsFor(tab: Tab, stops: string[]): Trip[] {
+// no = BIS 노선 번호("292-2"). 표에 노선번호 열이 있으면(한 표에 291·292·293이 섞임) 같은 번호의 행만 쓴다.
+export function tripsFor(tab: Tab, stops: string[], no = ''): Trip[] {
+  const noCol = tab.cols.findIndex((c) => /노선번호/.test(c));
+  const base = no.split('-')[0];
   const cand: (number[] | null)[] = tab.cols.map((c) => (/노선번호|구분|비\s*고/.test(c) || !c ? null : stops.flatMap((s, o) => (sameStop(c, s) ? [o] : []))));
   const trips: Trip[] = [];
   for (const row of tab.rows) {
+    const rowNo = noCol >= 0 ? (row[noCol] ?? '').match(/^(\d+)/)?.[1] : undefined;
+    if (base && rowNo && rowNo !== base) continue;
     const anchors: Trip = [];
     let prevOrd = -1, prevMin = -1;
     for (let j = 0; j < row.length; j++) {
@@ -67,7 +72,17 @@ export function tripsFor(tab: Tab, stops: string[]): Trip[] {
     const lo = anchors[0][0], hi = anchors[anchors.length - 1][0];
     if (hi - lo < stops.length / 2) continue;
     // X(안 감)인 정류장이 노선에 있으면 다른 변형(일찍 끝나거나 늦게 시작)의 운행이다
-    const skipped = row.some((v, j) => v === 'X' && cand[j]?.length);
+    // 단, 같은 정류장이 다른 열(예: "봉성"과 "봉성(경유)")에서 시각으로 나오면 그 X는 다른 경로 표시라 무시한다.
+    // 행의 노선 번호가 맞으면 이름이 정확히 같은 정류장만 본다 ("하가" X인데 노선에 "하가 입구"가 있는 경우는 지나가는 것)
+    const timed = new Set(row.flatMap((v, j) => (parseTime(v ?? '') !== null ? cand[j] ?? [] : [])));
+    const exact = (j: number, o: number) => !rowNo || norm(split(stops[o])[0]) === norm(split(tab.cols[j])[0]);
+    // "(경유)" 열에 시각이 있는데 그 경유지가 하나도 이 노선에 없으면 경유하는 다른 변형의 운행이다
+    // ("봉성(경유)"처럼 다른 열과 같은 정류장에만 맞는 건 경유지로 치지 않음)
+    const isVia = (j: number) => /경유/.test(tab.cols[j]) && parseTime(row[j] ?? '') !== null;
+    const plain = new Set(row.flatMap((v, j) => (!/경유/.test(tab.cols[j]) && parseTime(v ?? '') !== null ? cand[j] ?? [] : [])));
+    const viaCols = row.map((_, j) => j).filter(isVia);
+    const viaOther = viaCols.length > 0 && !viaCols.some((j) => cand[j]?.some((o) => !plain.has(o)));
+    const skipped = viaOther || row.some((v, j) => v === 'X' && cand[j]?.some((o) => !timed.has(o) && exact(j, o)));
     const m = dayMask(tab.way ?? '', row);
     if (m !== EVERY_DAY) anchors.m = m;
     if (!skipped) trips.push(anchors);

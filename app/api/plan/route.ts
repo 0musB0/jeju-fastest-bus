@@ -54,7 +54,7 @@ export async function GET(req: Request) {
     .filter(([r, s]) => ID.test(r ?? '') && !!routeById.get(r)?.stops.includes(s))
     .slice(0, MAX_PAIRS);
   const from = point(p.get('from')), to = point(p.get('to'));
-  const trips = from && to ? findTrips(from, to, index, rideMin) : [];
+  const trips = from && to ? findTrips(from, to, index, rideMin, 20) : [];
   const tripFirst = trips.flatMap((t) => t.legs[0].routeIds.map((r) => [r, t.legs[0].fromId]));
   const tripLater = trips.flatMap((t) => t.legs.slice(1).flatMap((l) => l.routeIds.map((r) => [r, l.fromId])));
 

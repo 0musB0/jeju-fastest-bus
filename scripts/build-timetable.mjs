@@ -20,8 +20,9 @@ const byBase = Map.groupBy([...latest.values()], (t) => t.base);
 const out = {};
 for (const r of routes) {
   const stops = r.stops.map((id) => nameOf.get(id) ?? '');
-  const trips = (byBase.get(r.no.split('-')[0]) ?? []).flatMap((t) => tripsFor(t, stops));
-  const e = buildEntry(trips);
+  const tabsOf = byBase.get(r.no.split('-')[0]) ?? [];
+  // 표의 노선번호로 거른 행 먼저. BIS 번호가 표와 다르면(BIS "800-51" = 표 "801번") 번호 없이 이름 순서로만 맞춘다
+  const e = buildEntry(tabsOf.flatMap((t) => tripsFor(t, stops, r.no))) ?? buildEntry(tabsOf.flatMap((t) => tripsFor(t, stops)));
   if (e) out[r.id] = e;
 }
 await writeFile('data/timetable.json', JSON.stringify(out));
