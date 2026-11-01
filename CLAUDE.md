@@ -21,9 +21,11 @@
 새 세션은 이 지도로 구조를 먼저 파악하고, 고칠 파일만 연다. **파일을 더하거나 빼거나 역할을 바꾸면 같은 커밋에서 이 지도도 고친다.**
 
 ```
-app/page.tsx          화면 전체(클라이언트). 장소 검색 → ODsay 직접 호출 → /api/plan → applyRealtime → arrivalMin → 정렬·표시, 30초마다 lite 재계산. 즐겨찾기(localStorage)
+app/page.tsx          화면 전체(클라이언트). 장소 검색 → ODsay 직접 호출 → /api/plan → applyRealtime → arrivalMin → 정렬·표시, 30초마다 lite 재계산. 즐겨찾기(localStorage). 결과 아래 애드센스 1자리(NEXT_PUBLIC_ADSENSE_CLIENT·_SLOT 둘 다 있을 때만)
 app/RouteMap.tsx      결과 지도(카카오맵 JS SDK), 노선 선 그리기
 app/layout.tsx        폰트(Jua)·메타. icon.svg, apple-icon.png, opengraph-image.* = 아이콘·링크 미리보기
+app/ads.txt/route.ts  애드센스 ads.txt (게시자 ID 없으면 404)
+app/privacy/page.tsx  개인정보처리방침 (애드센스 요건)
 app/globals.css       디자인(모래·현무암·귤색)
 app/api/search        카카오 키워드 검색 프록시(제주 rect 고정)
 app/api/plan          서버 핵심. data/*.json을 import해 findTrips(우리 경로 후보) + 노선별 busopen BusLocation(실시간) + 시간표 도착 시각 + 지도 선(paths)을 돌려줌
@@ -88,7 +90,7 @@ scripts/accuracy.mjs  배포된 /api/plan으로 대기 예측 정확도 측정 (
 - 함수 지역은 서울로 고정한다: `vercel.json`에 `"regions": ["icn1"]`.
 - 실시간 조회는 2개씩 나눠 병렬로 보내고(제주 서버는 5개를 동시에 보내면 모두 3초를 넘김, 실측), 각 요청에 `AbortSignal.timeout(3000)`을 둔다.
 - 실시간 응답은 `fetch(url, { next: { revalidate: 20 } })`로 인스턴스 간에 캐시를 공유한다. 함수 메모리 캐시는 쓰지 않는다.
-- Hobby 요금제는 비상업 용도 전용이다. 광고나 유료화를 하면 Pro로 옮긴다.
+- Hobby 요금제는 비상업 용도 전용이다. 광고나 유료화를 하면 Pro로 옮긴다. 애드센스 코드는 들어 있지만 `NEXT_PUBLIC_ADSENSE_CLIENT`가 없으면 꺼져 있다(2026-11-01). 이 값을 넣기 전에 Pro 전환을 먼저 확인한다.
 - API 확인은 로컬이 아니라 배포된 환경에서 한다 (IP·지역 문제는 로컬에서 드러나지 않는다).
 
 ## 코딩 규칙

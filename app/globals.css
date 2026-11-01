@@ -56,6 +56,9 @@ input:focus { border-color: var(--muted); }
 .badge.live { background: var(--green-bg); color: var(--green); }
 .bus { font-weight: 700; color: var(--ink); }
 .num { font-family: 'Jua', var(--mono); font-size: 16px; }
+/* 광고는 결과 아래 한 자리. 결과를 밀거나 가리지 않게 맨 끝에 둔다 */
+.ad { display: block; margin-top: 32px; min-height: 100px; }
+footer a { color: inherit; }
 footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid var(--line); font-size: 13px; color: var(--muted); }
 @keyframes rise { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) { .result { animation: none; } }

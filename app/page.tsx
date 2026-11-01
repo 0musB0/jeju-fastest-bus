@@ -133,6 +133,13 @@ function PlacePicker({ label, value, onPick, allowHere, favorites }: { label: st
   );
 }
 
+// 구글 애드센스 광고 1자리(결과 아래). 게시자 ID와 광고 단위 ID가 둘 다 있을 때만 나온다.
+const AD_CLIENT = process.env.NEXT_PUBLIC_ADSENSE_CLIENT, AD_SLOT = process.env.NEXT_PUBLIC_ADSENSE_SLOT;
+function Ad() {
+  useEffect(() => { try { ((window as any).adsbygoogle ||= []).push({}); } catch {} }, []);
+  return <ins className="adsbygoogle ad" data-ad-client={AD_CLIENT} data-ad-slot={AD_SLOT} data-ad-format="auto" data-full-width-responsive="true" />;
+}
+
 export default function Home() {
   const [from, setFrom] = useState<Place | null>(null);
   const [to, setTo] = useState<Place | null>(null);
@@ -324,6 +331,7 @@ export default function Home() {
           </article>
         );
       })}
+      {AD_CLIENT && AD_SLOT && <Ad />}
     </main>
   );
 }
