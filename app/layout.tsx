@@ -11,6 +11,9 @@ export const metadata = {
   twitter: { card: 'summary_large_image', title, description },
 };
 
+// 애드센스 게시자 ID(ca-pub-…)가 있으면 광고 스크립트를 넣는다. 없으면 광고 관련 코드는 하나도 나가지 않는다.
+const adClient = process.env.NEXT_PUBLIC_ADSENSE_CLIENT;
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="ko">
@@ -19,11 +22,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
         <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Jua&display=swap&text=%ED%98%BC%EC%A0%80%20%ED%83%91%EC%84%9C0123456789%3A%EB%B6%84APM%20" />
+        {adClient && <script async src={`https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${adClient}`} crossOrigin="anonymous" />}
       </head>
       <body>
         {children}
         <footer>
-          경로·요금: ODsay LAB · 버스 정보: 제주특별자치도 버스정보시스템 · 장소 검색: 카카오
+          경로·요금: ODsay LAB · 버스 정보: 제주특별자치도 버스정보시스템 · 장소 검색: 카카오 · <a href="/privacy">개인정보처리방침</a>
         </footer>
       </body>
     </html>
