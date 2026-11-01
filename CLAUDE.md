@@ -12,7 +12,7 @@
 ## 스택
 
 - Next.js (App Router) + TypeScript, Vercel 배포
-- 화면 1개, 서버 함수 2개: `app/api/search` (장소 검색), `app/api/plan` (경로 계산)
+- 길찾기 화면 1개(+애드센스 승인용 안내·소개·약관 정적 페이지, 2026-11-01), 서버 함수 2개: `app/api/search` (장소 검색), `app/api/plan` (경로 계산)
 - 정류장, 노선, 시간표, 노선 모양은 `data/*.json` 정적 파일로 둔다. DB는 쓰지 않는다.
 - 테스트는 `node:test` + `node:assert`로 작성하고 `npm test`로 돌린다. 새 라이브러리는 꼭 필요할 때만 추가한다.
 
@@ -23,9 +23,14 @@
 ```
 app/page.tsx          화면 전체(클라이언트). 장소 검색 → ODsay 직접 호출 → /api/plan → applyRealtime → arrivalMin → 정렬·표시, 30초마다 lite 재계산. 즐겨찾기(localStorage). 결과 아래 애드센스 1자리(NEXT_PUBLIC_ADSENSE_CLIENT·_SLOT 둘 다 있을 때만)
 app/RouteMap.tsx      결과 지도(카카오맵 JS SDK), 노선 선 그리기
-app/layout.tsx        폰트(Jua)·메타. icon.svg, apple-icon.png, opengraph-image.* = 아이콘·링크 미리보기
+app/layout.tsx        폰트(Jua)·메타·상단 메뉴·하단 링크. icon.svg, apple-icon.png, opengraph-image.* = 아이콘·링크 미리보기
 app/ads.txt/route.ts  애드센스 ads.txt (게시자 ID 없으면 404)
 app/privacy/page.tsx  개인정보처리방침 (애드센스 요건)
+app/about, terms, contact  소개·이용 방법, 이용약관, 문의(이메일) 정적 페이지
+app/guide/page.tsx    버스 안내 글 목록
+app/guide/[slug]      안내 글 본문(요금·종류·타는 법) + 공항→관광지 직행 표(빌드 때 data로 계산)
+app/sitemap.ts, robots.ts  검색엔진용
+lib/guides.ts         안내 글 목록(GUIDES), airportRides(공항 → 목적지 직행 노선·소요·첫차·막차)
 app/globals.css       디자인(모래·현무암·귤색)
 app/api/search        카카오 키워드 검색 프록시(제주 rect 고정)
 app/api/plan          서버 핵심. data/*.json을 import해 findTrips(우리 경로 후보) + 노선별 busopen BusLocation(실시간) + 시간표 도착 시각 + 지도 선(paths)을 돌려줌
