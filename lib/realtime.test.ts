@@ -55,7 +55,7 @@ test('우리 후보: ODsay에 이미 있는 노선·정류장은 빼고 화면 �
 
 test('배차 간격: 노선 길이 × 정류장당 소요 ÷ 버스 수, 환승 구간에 채워진다', () => {
   const loc = Array.from({ length: 40 }, (_, i) => ({ bus: i % 10 === 0 }));
-  assert.equal(headwayMin(loc), 20); // 40정류장 × 2분 ÷ 4대
+  assert.equal(headwayMin(loc), 15); // 40정류장 × 1.5분 ÷ 4대
   assert.equal(headwayMin([{ bus: false }]), undefined);
   const transfer: Route = { ...route, candidate: { legs: [route.candidate.legs[0], { walkBeforeMin: 1, rideMin: 5 }], walkAfterMin: 0 },
     rides: [route.rides[0], { busNos: ['500'], routeIds: ['405150001', '405150002'], stationId: '405000200', from: '시청', to: '노형', stops: 3 }] };

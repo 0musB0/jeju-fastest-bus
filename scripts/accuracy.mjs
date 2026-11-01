@@ -7,7 +7,7 @@ import { readFile, appendFile } from 'node:fs/promises';
 const MINUTES = Number(process.argv[2] ?? 60);
 const POLL_S = 30;
 const APP = 'https://jeju-fastest-bus.vercel.app';
-const MIN_PER_STOP = 2; // lib/config.ts와 같은 값
+const MIN_PER_STOP = 1.5; // lib/config.ts와 같은 값
 const PREFIXES = ['360', '365', '315', '202', '281']; // 제주시 간선 3개 + 시외 2개
 const MAX_STOPS_AHEAD = 15; // 이보다 먼 버스는 예측에 쓰지 않음 (앱도 가까운 버스를 씀)
 
