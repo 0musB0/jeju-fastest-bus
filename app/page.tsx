@@ -331,6 +331,12 @@ export default function Home() {
           </article>
         );
       })}
+      <section className="intro">
+        <h2>이렇게 골라요</h2>
+        <p>가까운 정류장이 늘 빠른 건 아니에요. 걸어서 2분 거리 버스가 25분 뒤에 오고 6분 거리 버스가 8분 뒤에 온다면, 멀리 걸어가는 쪽이 17분 먼저 도착해요.
+          혼저 탑서는 걷는 시간, 지금 버스 위치로 계산한 대기 시간, 타는 시간, 갈아타는 시간을 모두 더해 <b>도착 시각이 가장 이른 순서</b>로 보여드려요. <a href="/about">자세히 보기</a></p>
+        <p className="muted">처음 타신다면: <a href="/guide/how-to-ride">제주 버스 타는 법</a> · <a href="/guide/fare">요금과 무료 환승</a> · <a href="/guide">공항에서 관광지 가는 버스</a></p>
+      </section>
       {AD_CLIENT && AD_SLOT && <Ad />}
     </main>
   );

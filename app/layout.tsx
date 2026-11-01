@@ -6,7 +6,7 @@ const description = '가까운 정류장이 아니라 목적지에 가장 먼저
 // 아이콘·미리보기 이미지는 app/icon.svg, apple-icon.png, opengraph-image.png 파일로 Next가 자동으로 넣는다
 export const metadata = {
   metadataBase: new URL('https://jeju-fastest-bus.vercel.app'),
-  title, description,
+  title: { default: title, template: '%s · 혼저 탑서' }, description,
   openGraph: { title, description, siteName: '혼저 탑서', locale: 'ko_KR', type: 'website', url: '/' },
   twitter: { card: 'summary_large_image', title, description },
 };
@@ -25,9 +25,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         {adClient && <script async src={`https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${adClient}`} crossOrigin="anonymous" />}
       </head>
       <body>
+        <nav className="nav"><a href="/">길찾기</a><a href="/guide">버스 안내</a><a href="/about">소개</a></nav>
         {children}
         <footer>
-          경로·요금: ODsay LAB · 버스 정보: 제주특별자치도 버스정보시스템 · 장소 검색: 카카오 · <a href="/privacy">개인정보처리방침</a>
+          경로·요금: ODsay LAB · 버스 정보: 제주특별자치도 버스정보시스템 · 장소 검색: 카카오
+          <div className="links"><a href="/about">소개</a><a href="/guide">버스 안내</a><a href="/terms">이용약관</a><a href="/privacy">개인정보처리방침</a><a href="/contact">문의</a></div>
         </footer>
       </body>
     </html>

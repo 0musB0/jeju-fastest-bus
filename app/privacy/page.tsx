@@ -1,9 +1,9 @@
 // 개인정보처리방침. 애드센스 승인에 필요하다. 사이트가 실제로 하는 일만 적는다.
-export const metadata = { title: '개인정보처리방침 · 혼저 탑서' };
+export const metadata = { title: '개인정보처리방침' };
 
 export default function Privacy() {
   return (
-    <main>
+    <main className="doc">
       <h1>개인정보처리방침</h1>
       <p>혼저 탑서는 회원가입이나 로그인이 없고, 이름·연락처 같은 개인정보를 받거나 저장하지 않습니다.</p>
       <h2>위치 정보</h2>
