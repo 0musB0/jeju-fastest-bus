@@ -6,6 +6,7 @@ export const WALK_M_PER_MIN = 80; // 성인 보통 걸음(4.8km/h). 하귀→남
 export const BOARD_MARGIN_MIN = 1; // 버스보다 이만큼 먼저 정류장에 닿아야 탈 수 있다
 export const TRANSFER_MARGIN_MIN = 3; // 환승은 앞 버스 도착·뒤 버스 시간표가 둘 다 어림값이라 여유를 더 둔다
 export const MIN_PER_STOP = 1.5; // 시간표가 없을 때 정류장당 평균 소요(분). 실측 1.53분(2026-11-01 일요일 오전 3시간, 360·365·315·281번 2,138건)
+export const SLOW_M = 150; // 시간표 기준점 사이가 분당 이 거리(m)보다 느리면 이름을 잘못 맞춘 것으로 봄 (버스 평균 분당 300~400m)
 
 // 카카오 검색을 제주로 제한하는 사각형 (서경,남위,동경,북위)
 export const JEJU_RECT = '126.08,33.10,127.00,33.60';

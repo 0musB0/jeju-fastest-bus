@@ -16,8 +16,9 @@ export type RideMin = (route: BusRoute, i: number, j: number) => number;
 // 버스 정보 시스템 노선 목록에는 종점 뒤에 다른 운행 계통의 정류장이 덧붙은 것이 있다
 // (212-52: 제주버스터미널 종점 뒤에 제주대학교·제대아파트… 를 돌아 다시 터미널). 사이트의 노선 모양(shapes)이 지나지 않는
 // 정류장이 5개 이상 이어지고 그 뒤에 모양이 다시 이어지면, 그 정류장들을 빈칸('')으로 바꾼다. 순번(시간표·모양의 기준)은 그대로 둔다.
-// 단순화: 모양이 없는 노선과 끝부분의 어긋남(모양이 덜 그려졌을 수 있음)은 그대로 둔다.
-export function maskOffShape(routes: BusRoute[], shapes: Shapes): BusRoute[] {
+// 종점: 모양을 벗어나기 직전 정류장 이름이 노선의 종점(to)과 같으면 2개 이상 벗어날 때 그 뒤를 끝까지 지운다 (900-1: 조천리 종점 뒤 국제여객선터미널까지).
+// 단순화: 모양이 없는 노선과 종점 이름이 안 맞는 끝부분(모양이 덜 그려졌을 수 있음)은 그대로 둔다.
+export function maskOffShape(routes: BusRoute[], shapes: Shapes, nameOf?: (id: string) => string | undefined): BusRoute[] {
   return routes.map((r) => {
     const s = shapes[r.id]?.s;
     if (!s || s.length !== r.stops.length) return r;
@@ -26,7 +27,10 @@ export function maskOffShape(routes: BusRoute[], shapes: Shapes): BusRoute[] {
       if (s[k] !== -1) { k++; continue; }
       let e = k;
       while (e < s.length && s[e] === -1) e++;
-      if (e - k >= 5 && e < s.length && s[e] >= s[k - 1]) stops = stops.map((id, n) => (n >= k && n < e ? '' : id));
+      const tail = e - k >= 2 && nameOf?.(r.stops[k - 1]) === r.to; // 종점 다음부터 끝까지 (520-6: 등기소 종점 뒤 법환…중앙로터리)
+      // 가운데를 지운 뒤 남은 끝 정류장들이 모두 앞에서 이미 지난 곳이면 같이 지운다 (212-51: 성산항(종점) … 꼬리 … 성산항입구, 성산항)
+      const loopBack = e < s.length && r.stops.slice(e).every((id) => r.stops.slice(0, k).includes(id));
+      if (tail || (e - k >= 5 && e < s.length && s[e] >= s[k - 1])) stops = stops.map((id, n) => (n >= k && (n < e || loopBack || tail) ? '' : id));
       k = e;
     }
     return stops === r.stops ? r : { ...r, stops };

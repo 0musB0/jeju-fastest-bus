@@ -22,13 +22,13 @@
 
 ```
 app/page.tsx          화면 전체(클라이언트). 장소 검색 → ODsay 직접 호출 → /api/plan → applyRealtime → arrivalMin → 정렬·표시, 30초마다 lite 재계산. 즐겨찾기(localStorage). 결과 아래 애드센스 1자리(NEXT_PUBLIC_ADSENSE_CLIENT·_SLOT 둘 다 있을 때만)
-app/RouteMap.tsx      결과 지도(카카오맵 JS SDK), 노선 선 그리기
+app/RouteMap.tsx      결과 지도(카카오맵 JS SDK), 노선 선 그리기. RouteLine = 노선 페이지의 노선 한 개 선(펼칠 때 그림)
 app/layout.tsx        폰트(Jua)·메타·상단 메뉴·하단 링크. icon.svg, apple-icon.png, opengraph-image.* = 아이콘·링크 미리보기
 app/ads.txt/route.ts  애드센스 ads.txt (게시자 ID 없으면 404)
 app/privacy/page.tsx  개인정보처리방침 (애드센스 요건)
 app/about, terms, contact  소개·이용 방법, 이용약관, 문의(이메일) 정적 페이지
 app/routes/page.tsx   모든 노선 번호 목록 (상단 메뉴 "노선")
-app/routes/[base]     번호별 가지 노선: 정류장 순서·요일별 출발 시각(빌드 때 data로)
+app/routes/[base]     번호별 가지 노선: 지도 선·정류장 순서·요일별 첫 정류장 출발 시각(빌드 때 data로)
 app/guide/page.tsx    버스 안내 글 목록
 app/guide/[slug]      안내 글 본문(요금·종류·타는 법) + 공항→관광지 직행 표(빌드 때 data로 계산)
 app/sitemap.ts, robots.ts  검색엔진용
@@ -45,7 +45,7 @@ lib/timetable.ts      시간표 표 파싱·이름 맞추기·Entry 생성, arri
 lib/*.test.ts         같은 이름 파일의 테스트 (npm test)
 data/stations.json    정류장 {id,name,lat,lng,dir}      ← scripts/fetch-data.mjs (data.yml, 매달 2일)
 data/routes.json      노선 {id,no,to,stops[]}          ← scripts/fetch-data.mjs
-data/schedules.json   사이트 시간표 원본 표             ← scripts/fetch-schedules.mjs (schedules.yml, 매달 2일)
+data/schedules.json   사이트 시간표 원본 표(탭 이름 label에 평일/휴일)             ← scripts/fetch-schedules.mjs (schedules.yml, 매달 2일)
 data/timetable.json   노선ID → {p,t,m,n} 정류장 순번 기준 ← scripts/build-timetable.mjs
 data/shapes.json      노선ID → {p 좌표, s 정류장 선분}   ← scripts/fetch-shapes.mjs
 scripts/accuracy.mjs  배포된 /api/plan으로 대기 예측 정확도 측정 (accuracy.yml, 수동)

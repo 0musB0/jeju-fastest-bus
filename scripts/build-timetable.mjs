@@ -9,11 +9,12 @@ const [tabs, routes, stations] = await Promise.all(['data/schedules.json', 'data
 const nameOf = new Map(stations.map((s) => [s.id, s.name]));
 const byId = new Map(stations.map((s) => [s.id, s]));
 
-// 같은 방향 표가 시행일만 다르게 여러 개 있으면 가장 최근 것만 쓴다
+// 같은 방향 표가 시행일만 다르게 여러 개 있으면 가장 최근 것만 쓴다.
+// 탭 이름(label)이 다르면 다른 표다: 요일(320 "(평일)"/"(휴일)")이나 가지 번호(312 / 312-1)가 이름에만 적혀 있다
 const day = (d) => (d ? new Date(d.replaceAll('.', '-')).getTime() : 0);
 const latest = new Map();
 for (const t of tabs) {
-  const k = `${t.base}|${t.way}`;
+  const k = `${t.base}|${t.way}|${t.label ?? ''}`;
   const o = latest.get(k);
   if (!o || day(t.date) > day(o.date) || (day(t.date) === day(o.date) && t.id > o.id)) latest.set(k, t);
 }

@@ -94,6 +94,14 @@ test('노선 모양이 지나지 않는 정류장이 5개 이상 끼어 있으�
   const r = { id: '1', no: '212-52', to: '', stops: ['A', 'B', 'T', 'x1', 'x2', 'x3', 'x4', 'x5', 'T2'] };
   const [m] = maskOffShape([r], { '1': { p: [], s: [0, 3, 9, -1, -1, -1, -1, -1, 9] } });
   assert.deepEqual(m.stops, ['A', 'B', 'T', '', '', '', '', '', 'T2']);
+  const [lb] = maskOffShape([{ ...r, stops: ['A', 'B', 'T', 'x1', 'x2', 'x3', 'x4', 'x5', 'B', 'T'] }], { '1': { p: [], s: [0, 3, 9, -1, -1, -1, -1, -1, 9, 9] } });
+  assert.deepEqual(lb.stops, ['A', 'B', 'T', '', '', '', '', '', '', '']); // 꼬리 뒤에 앞서 지난 정류장만 남으면 같이 지움
   const [k] = maskOffShape([r], { '1': { p: [], s: [0, 3, 9, -1, -1, -1, 9, 9, 9] } }); // 3개는 정류장 맞추기 오차일 수 있어 그대로
   assert.deepEqual(k.stops, r.stops);
+  // 끝부분: 모양 안 마지막 정류장이 종점(to)이면 뒤에 붙은 2개 이상을 지운다. 종점 이름이 다르면 그대로
+  const t = { id: '1', no: '900-1', to: '조천리', stops: ['A', 'C', 'x1', 'x2'] };
+  const names: Record<string, string> = { C: '조천리' };
+  const sh = { '1': { p: [], s: [0, 5, -1, -1] } };
+  assert.deepEqual(maskOffShape([t], sh, (id) => names[id])[0].stops, ['A', 'C', '', '']);
+  assert.deepEqual(maskOffShape([{ ...t, to: '김녕' }], sh, (id) => names[id])[0].stops, t.stops);
 });

@@ -71,3 +71,38 @@ export default function RouteMap({ from, to, rides }: { from: Pt; to: Pt; rides:
   if (!KEY) return null;
   return err ? <p className="warn">{err}</p> : <div ref={box} className="map" role="img" aria-label="경로 지도" />;
 }
+
+// 노선 한 개의 선(노선 페이지). 접힌 <details> 안에 있으면 펼칠 때 그린다 (숨긴 상자에는 지도를 못 그림)
+export function RouteLine({ path }: { path: Pt[] }) {
+  const box = useRef<HTMLDivElement>(null);
+  const [err, setErr] = useState('');
+
+  useEffect(() => {
+    if (!KEY || !box.current || path.length < 2) return;
+    const holder = box.current.closest('details');
+    let done = false;
+    const draw = () => {
+      if (done || (holder && !holder.open)) return;
+      done = true;
+      loadSdk().then((kakao) => {
+        if (!box.current) return;
+        const { maps } = kakao;
+        const ll = (p: Pt) => new maps.LatLng(p.lat, p.lng);
+        const map = new maps.Map(box.current, { center: ll(path[0]), level: 8 });
+        const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#e8771e';
+        new maps.Polyline({ map, path: path.map(ll), strokeWeight: 5, strokeColor: accent, strokeOpacity: 0.9 });
+        [[path[0], '출발'], [path.at(-1)!, '종점']].forEach(([pt, label]) =>
+          new maps.CustomOverlay({ map, position: ll(pt as Pt), yAnchor: 1.2, content: `<div class="pin end">${label}</div>` }));
+        const bounds = new maps.LatLngBounds();
+        path.forEach((p) => bounds.extend(ll(p)));
+        map.setBounds(bounds, 30, 30, 30, 30);
+      }).catch((e) => setErr(e.message));
+    };
+    draw();
+    holder?.addEventListener('toggle', draw);
+    return () => holder?.removeEventListener('toggle', draw);
+  }, [path]);
+
+  if (!KEY || path.length < 2) return null;
+  return err ? <p className="warn">{err}</p> : <div ref={box} className="map" role="img" aria-label="노선 지도" />;
+}
