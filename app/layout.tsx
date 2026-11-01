@@ -9,7 +9,8 @@ export const metadata = {
   title: { default: title, template: '%s · 혼저 탑서' }, description,
   openGraph: { title, description, siteName: '혼저 탑서', locale: 'ko_KR', type: 'website', url: '/' },
   twitter: { card: 'summary_large_image', title, description },
-  verification: { google: 'P2GUzIC1LSDuFqbKS3kY2BlTpYczUyqW2WSoZHYYpa0' }, // 구글 서치 콘솔 소유 확인
+  // 검색엔진 소유 확인: 구글 서치 콘솔, 네이버 서치어드바이저
+  verification: { google: 'P2GUzIC1LSDuFqbKS3kY2BlTpYczUyqW2WSoZHYYpa0', other: { 'naver-site-verification': '05cc415e7cf9354051a3fd95ceb362ce87858837' } },
 };
 
 // 애드센스 게시자 ID(ca-pub-…)가 있으면 광고 스크립트를 넣는다. 없으면 광고 관련 코드는 하나도 나가지 않는다.
