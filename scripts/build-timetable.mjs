@@ -35,7 +35,7 @@ for (const r of routes) {
   const tabsOf = byBase.get(r.no.split('-')[0]) ?? [];
   // 표의 노선번호로 거른 행 먼저. BIS 번호가 표와 다르면(BIS "800-51" = 표 "801번") 번호 없이 이름 순서로만 맞춘다
   const e = buildEntry(tabsOf.flatMap((t) => tripsFor(t, stops, r.no)), cum) ?? buildEntry(tabsOf.flatMap((t) => tripsFor(t, stops)), cum);
-  if (e) out[r.id] = e;
+  if (e) out[r.id] = { ...e, n: r.stops.length }; // n = 만들 때 정류장 수. 노선만 갱신되고 시간표 갱신이 실패하면 서버가 이 값으로 걸러낸다
 }
 await writeFile('data/timetable.json', JSON.stringify(out));
 console.log(`시간표 ${tabs.length}개(최신 ${latest.size}) → 노선 ${Object.keys(out).length}/${routes.length}개`);

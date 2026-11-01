@@ -40,7 +40,7 @@ export function headwayMin(loc: { bus: boolean }[]): number | undefined {
 export type PlanResults = Record<string, number[] | { error: string }>;
 export type Headways = Record<string, number>;
 // 시간표: "노선:정류장" → 지금부터 몇 분 뒤 오는지 / 오늘 운행이 끝났으면 첫차 시각(자정부터 분)
-export type Schedules = { scheduled?: Record<string, number[]>; firstBus?: Record<string, number> };
+export type Schedules = { scheduled?: Record<string, number[]>; pending?: Record<string, number[]>; firstBus?: Record<string, number> };
 
 // 서버에 보낼 "노선:정류장" 쌍. first = 첫 버스(실시간 대상), 아니면 환승 버스(시간표만 씀).
 export function rideKeys(routes: Route[], first: boolean): string[] {
@@ -59,6 +59,8 @@ export function applyRealtime(route: Route, results: PlanResults, headways: Head
     const times = keys(ride).flatMap((k) => sched.scheduled?.[k] ?? []).sort((a, b) => a - b);
     const next = { ...leg, ...(freq ? { intervalMin: 1 / freq } : {}), ...(times.length ? { timetableMin: times } : {}) };
     if (i > 0) return next;
+    const pend = keys(ride).flatMap((k) => sched.pending?.[k] ?? []).sort((a, b) => a - b);
+    if (pend.length) Object.assign(next, { pendingMin: pend });
     // 단순화: 이 구간의 정류장당 평균 소요(탑승 시간 ÷ 정류장 수)를 버스가 오는 길에도 씀, 신호·정차 편차는 무시
     const perStop = ride.stops > 0 && leg.rideMin > 0 ? leg.rideMin / ride.stops : MIN_PER_STOP;
     const found = ride.routeIds.map((id) => results[`${id}:${ride.stationId}`]).filter(Array.isArray);

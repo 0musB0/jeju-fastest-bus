@@ -10,3 +10,4 @@ export const MIN_PER_STOP = 1.5; // 시간표가 없을 때 정류장당 평균 
 export const JEJU_RECT = '126.08,33.10,127.00,33.60';
 export const TRANSFER_M = 200; // 갈아탈 때 걸어서 옮길 수 있는 정류장 거리
 export const TRANSFER_PENALTY_MIN = 10; // 우리 데이터로 찾은 환승 경로의 순위용 대기 어림값 (실제 대기는 시간표로 다시 계산)
+export const SHORT_HOP_WALK_MIN = 8; // 환승 뒤 구간이 걸어서 이만큼 안이면 버스를 한 번 더 갈아탈 이유가 없다고 보고 그 경로를 뺀다

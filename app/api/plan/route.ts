@@ -15,9 +15,11 @@ const routes = routeList as BusRoute[];
 const routeById = new Map(routes.map((r) => [r.id, r]));
 const timetable = timetableData as Timetable;
 const index = indexData(stations, routes, shapeData as Shapes);
+// 시간표는 노선 ID + 정류장 순번으로 저장돼 있다. 만들 때와 정류장 수가 다르면(노선만 갱신되고 시간표 갱신 실패) 순번이 어긋나므로 쓰지 않는다.
+const tableOf = (r: BusRoute | undefined) => { const e = r && timetable[r.id]; return e && e.n === r.stops.length ? e : undefined; };
 // 탑승 시간: 시간표의 정류장 간 소요, 없으면 정류장 수 × 평균 소요(정류장이 드문 노선은 거리로)
 const rideMin: RideMin = (r, i, j) => {
-  const e = timetable[r.id];
+  const e = tableOf(r);
   const m = e ? offsetAt(e.p, j) - offsetAt(e.p, i) : 0;
   return Math.round(m >= 1 ? m : roughRide(index, r, i, j)); // 1분 미만은 시간표 보간 오차로 보고 어림값
 };
@@ -73,7 +75,10 @@ export async function GET(req: Request) {
   const results: Record<string, number[] | { error: string }> = {};
   for (const [r, s] of allPairs) {
     const loc = locs.get(r)!;
-    const away = loc.ok ? stopsAway(loc.stops, s) : null;
+    // 기점(첫 정류장)에 서 있는 버스는 출발 시각을 기다리는 중일 수 있다. 시간표가 있는 노선은 그 버스를 빼고,
+    // 아직 출발하지 않은 버스는 시간표(pending)로 계산한다.
+    const parked = !!tableOf(routeById.get(r));
+    const away = loc.ok ? stopsAway(parked ? loc.stops.map((x, k) => (k === 0 ? { ...x, bus: false } : x)) : loc.stops, s) : null;
     results[`${r}:${s}`] = !loc.ok ? { error: loc.reason } : away ?? { error: '이 노선에 없는 정류장' };
   }
   const headways: Record<string, number> = {};
@@ -85,12 +90,16 @@ export async function GET(req: Request) {
   const date = new Date(), now = kstMinutes(date), today = kstDay(date);
   const nextDay = now >= 720 ? kstDay(date, 1) : today; // 막차 뒤 첫차는 오후면 내일 요일로
   const scheduled: Record<string, number[]> = {}, firstBus: Record<string, number> = {};
+  const pending: Record<string, number[]> = {}; // 시간표 버스 중 아직 기점을 떠나지 않은 것 (실시간 위치에 안 보이는 버스)
   for (const [r, s] of [...pairs, ...laterPairs, ...tripFirst, ...tripLater]) {
-    const e = timetable[r], ord = routeById.get(r)?.stops.indexOf(s) ?? -1;
+    const e = tableOf(routeById.get(r)), ord = routeById.get(r)?.stops.indexOf(s) ?? -1;
     if (!e || ord < 0) continue;
     // 낮에 3시간 넘게 비는 노선도 많다(시골·관광지). 3시간 안에 없다고 "운행 끝"으로 보지 않는다.
     const a = arrivals(e, ord, now, Math.max(180, 1560 - now), today).slice(0, 12);
     if (a.length) scheduled[`${r}:${s}`] = a;
+    const lead = offsetAt(e.p, ord) - offsetAt(e.p, 0); // 기점에서 이 정류장까지 걸리는 분
+    const notYet = a.filter((m) => m > lead);
+    if (notYet.length) pending[`${r}:${s}`] = notYet;
     else {
       const f = firstAt(e, ord, nextDay);
       if (f !== undefined) firstBus[`${r}:${s}`] = f;
@@ -102,5 +111,7 @@ export async function GET(req: Request) {
     const [r, s, n] = k.split(':'), route = routeById.get(r), i = route?.stops.indexOf(s) ?? -1, j = i + Number(n);
     if (route && i >= 0 && Number.isInteger(Number(n)) && Number(n) > 0 && j < route.stops.length) paths[k] = legPath(index, route, i, j);
   }
-  return Response.json({ results, headways, scheduled, firstBus, trips, paths });
+  // lite = 30초 자동 갱신: 지도 선은 처음 받은 것을 화면이 그대로 쓴다
+  const out = p.get('lite') ? trips.map((t) => ({ ...t, legs: t.legs.map((l) => ({ ...l, path: [] })) })) : trips;
+  return Response.json({ results, headways, scheduled, pending, firstBus, trips: out, paths });
 }

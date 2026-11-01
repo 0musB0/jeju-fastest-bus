@@ -1,7 +1,6 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
 import { arrivalMin, kstClock12 as kstClock } from '@/lib/eta';
-import { BOARD_MARGIN_MIN } from '@/lib/config';
 import { kstMinutes } from '@/lib/timetable';
 import { parseOdsay, type Route } from '@/lib/odsay';
 import { applyRealtime, tripsToRoutes, rideKeys, type Headways, type PlanResults, type Schedules } from '@/lib/realtime';
@@ -140,12 +139,14 @@ export default function Home() {
   const [routes, setRoutes] = useState<Ranked[]>([]);
   const [at, setAt] = useState<Date | null>(null);
   const [msg, setMsg] = useState('');
+  const [rtDown, setRtDown] = useState(false); // 실시간 서버가 응답하지 않아 시간표로만 계산했는지
   const [selKey, setSelKey] = useState(''); // 고른 경로: 30초 갱신으로 순서가 바뀌어도 같은 경로를 따라간다
 
   const odsayErr = useRef('');
   const odsayRef = useRef<Route[] | null>(null); // 출발·도착이 같으면 ODsay 경로는 다시 부르지 않는다 (일일 한도)
   const reqId = useRef(0); // 새 검색마다 1씩 늘린다. 늦게 온 이전 검색·갱신 응답은 버린다.
   const live = useRef(false); // 결과가 화면에 있을 때만 자동 갱신
+  const pathsRef = useRef(new Map<string, Trip['legs'][number]['path']>()); // 우리 경로의 지도 선: 처음 받은 것을 갱신 때도 쓴다
 
   // 출발·도착이 바뀌면 ODsay로 경로 후보를 받고, 30초마다 실시간·시간표만 다시 계산한다.
   async function plan(refresh = false) {
@@ -188,16 +189,26 @@ export default function Home() {
       try {
         const pathKey = (x: Route['rides'][number]) => `${x.routeIds[0]}:${x.stationId}:${x.stops}`;
         const q = new URLSearchParams({ q: rideKeys(odsay, true).slice(0, 30).join(','), later: rideKeys(odsay, false).slice(0, 30).join(','), from: `${from.lat},${from.lng}`, to: `${to.lat},${to.lng}`,
-          paths: refresh ? '' : [...new Set(odsay.slice(0, 6).flatMap((o) => o.rides.map(pathKey)))].join(',') });
+          paths: refresh ? '' : [...new Set(odsay.slice(0, 6).flatMap((o) => o.rides.map(pathKey)))].join(','), ...(refresh ? { lite: '1' } : {}) });
         const r = await fetch(`/api/plan?${q}`).then((r) => r.json());
         results = r.results ?? {};
         headways = r.headways ?? {};
-        sched = { scheduled: r.scheduled, firstBus: r.firstBus };
+        sched = { scheduled: r.scheduled, pending: r.pending, firstBus: r.firstBus };
         trips = r.trips ?? [];
+        // 지도 선은 첫 검색에서만 받는다 (갱신 응답은 빈 선). 구간 = 탈 정류장 > 내릴 정류장 + 노선
+        const legKey = (l: Trip['legs'][number]) => `${l.fromId}>${l.toId}>${l.routeIds[0]}`;
+        if (!refresh) pathsRef.current.clear();
+        for (const t of trips) for (const l of t.legs) {
+          if (l.path?.length) pathsRef.current.set(legKey(l), l.path);
+          else l.path = pathsRef.current.get(legKey(l)) ?? [];
+        }
         // ODsay 경로의 지도 선을 노선 모양(도로)으로 바꾼다
         for (const o of odsay) for (const x of o.rides) if (r.paths?.[pathKey(x)]?.length > 1) x.path = r.paths[pathKey(x)];
+        // "이 노선에 없는 정류장"은 고장이 아니다. 실시간 API 오류·무응답만 안내한다.
+        setRtDown(Object.values(results).some((v) => !Array.isArray(v) && v.error !== '이 노선에 없는 정류장'));
       } catch {
         if (refresh) return; // 갱신 중 한 번 끊기면 이전 결과를 그대로 둔다
+        setRtDown(true);
         /* 첫 검색: ODsay 경로만, 대기는 추정 불가로 표시 */
       }
       if (stale()) return;
@@ -257,14 +268,16 @@ export default function Home() {
           <span className="muted">30초마다 자동 갱신</span>
         </div>
       )}
+      {at && routes.length > 0 && rtDown && <p className="warn">실시간 버스 위치를 받지 못해 일부는 시간표로 계산했어요.</p>}
       {from && to && routes[sel] && <RouteMap from={from} to={to} rides={routes[sel].rides} />}
       {routes.map((r, i) => {
         const key = routeKey(r);
         const walk = r.candidate.legs.reduce((s, l) => s + l.walkBeforeMin, r.candidate.walkAfterMin);
         const leg = r.candidate.legs[0];
-        // 걸어가서 탈 수 있는 첫 버스
-        const next = leg.nextBusesMin?.find((b) => b >= leg.walkBeforeMin + BOARD_MARGIN_MIN);
-        const planned = leg.timetableMin?.find((b) => b >= leg.walkBeforeMin + BOARD_MARGIN_MIN);
+        // 걸어가서 탈 첫 버스: 도착 시각 계산이 고른 버스와 같은 것을 보여준다
+        const b0 = r.eta?.boards[0];
+        const next = b0?.how === 'realtime' ? b0.at : undefined;
+        const planned = b0?.how === 'timetable' ? b0.at : undefined;
         const [stop, side] = splitStop(r.rides[0].from);
         return (
           <article key={key} className={`box result${i === 0 && r.eta ? ' best' : ''}${i === sel ? ' sel' : ''}`} style={{ '--i': i } as React.CSSProperties}
