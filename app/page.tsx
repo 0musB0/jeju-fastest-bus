@@ -12,6 +12,11 @@ type Place = { name: string; address?: string; lat: number; lng: number };
 type Ranked = Route & { eta: ReturnType<typeof arrivalMin> };
 
 const ODSAY_KEY = process.env.NEXT_PUBLIC_ODSAY_KEY ?? '';
+// 크롬이 뒤에 둔 탭을 지웠다가 다시 열면 페이지가 새로 뜬다. 그때 출발·도착을 되살린다 (탭을 닫으면 사라짐).
+const SAVED = 'trip';
+const loadTrip = (): { from: Place | null; to: Place | null } | null => {
+  try { return JSON.parse(sessionStorage.getItem(SAVED) ?? 'null'); } catch { return null; }
+};
 // 도착 칸 안내 문구: 제주말, 페이지를 열 때마다 바뀐다
 const ASKS = ['어디 감수꽈?', '어드레 가카마씸?', '오늘은 어드레 감서?'];
 // 버스 번호만: "300(신사동)", "365-21" → "300", "365" (같은 번호는 하나로)
@@ -49,7 +54,7 @@ function PlacePicker({ label, value, onPick, allowHere }: { label: string; value
   // 출발지 기본값은 현재 위치: 처음 한 번 자동으로 묻는다.
   const asked = useRef(false);
   useEffect(() => {
-    if (allowHere && !asked.current) { asked.current = true; here(); }
+    if (allowHere && !asked.current && !loadTrip()?.from) { asked.current = true; here(); }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   function here() {
@@ -179,13 +184,20 @@ export default function Home() {
     }
   }
 
-  useEffect(() => { plan(); }, [from, to]); // eslint-disable-line react-hooks/exhaustive-deps
-  // 자동 갱신: 화면을 보고 있을 때 30초마다 (서버의 실시간 캐시가 20초), 다른 탭·잠금에서 돌아오면 바로
+  const restored = useRef(false);
   useEffect(() => {
-    const tick = () => { if (document.visibilityState === 'visible') plan(true); };
-    const id = setInterval(tick, 30_000);
-    document.addEventListener('visibilitychange', tick);
-    return () => { clearInterval(id); document.removeEventListener('visibilitychange', tick); };
+    const t = loadTrip();
+    if (t) { setFrom(t.from); setTo(t.to); }
+    restored.current = true;
+  }, []);
+  useEffect(() => {
+    if (restored.current) try { sessionStorage.setItem(SAVED, JSON.stringify({ from, to })); } catch {}
+    plan();
+  }, [from, to]); // eslint-disable-line react-hooks/exhaustive-deps
+  // 자동 갱신: 화면을 보고 있을 때만 30초마다 (서버의 실시간 캐시가 20초). 돌아왔다고 바로 다시 계산하지는 않는다.
+  useEffect(() => {
+    const id = setInterval(() => { if (document.visibilityState === 'visible') plan(true); }, 30_000);
+    return () => clearInterval(id);
   }, [from, to]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
