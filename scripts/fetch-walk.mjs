@@ -7,11 +7,13 @@ import { writeFile } from 'node:fs/promises';
 const q = `[out:json][timeout:300];
 way["highway"]["highway"!~"^(motorway|motorway_link|construction|proposed|raceway|bus_guideway|abandoned)$"]["foot"!~"^(no|private)$"]["access"!~"^(no|private)$"]["area"!="yes"](33.18,126.13,33.58,126.98);
 (._;>;);out skel qt;`;
-const servers = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter'];
+// Overpass는 기본 User-Agent를 막는다(406). 프로젝트를 밝히는 User-Agent를 보낸다.
+const headers = { 'User-Agent': 'jeju-fastest-bus (github.com/0musB0/jeju-fastest-bus)', Accept: 'application/json' };
+const servers = ['https://overpass-api.de/api/interpreter', 'https://overpass.private.coffee/api/interpreter', 'https://overpass.kumi.systems/api/interpreter'];
 let data;
 for (const s of servers) {
   try {
-    const res = await fetch(s, { method: 'POST', body: new URLSearchParams({ data: q }), signal: AbortSignal.timeout(360_000) });
+    const res = await fetch(s, { method: 'POST', headers, body: new URLSearchParams({ data: q }), signal: AbortSignal.timeout(360_000) });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     data = await res.json();
     break;
