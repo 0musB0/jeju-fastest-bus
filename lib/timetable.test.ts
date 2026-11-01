@@ -111,3 +111,11 @@ test('"제주대" 열은 제주대학교에 맞추고 제주대학교병원에�
   const stops = ['공항', 'a', '제주시청', 'b', '제주대학교병원', '제주대학교'];
   assert.deepEqual(tripsFor(t, stops), [[[0, 420], [2, 439], [5, 458]]]);
 });
+
+test('loose: 글자만 겹치는 경유 열의 X는 무시하고, 이름이 그대로 맞는 경유 열의 X는 따른다 (201번 "오조(경유)")', () => {
+  const t = { cols: ['터미널', '세화', '세화고(경유)', '오조(경유)', '성산'], rows: [['06:00', '06:30', 'X', 'X', '07:00'], ['06:20', '06:50', '○', 'X', '07:20']] };
+  const plain = ['터미널', 'a', '세화리', '오조리 입구', '성산항'], viaSchool = ['터미널', 'a', '세화리', '세화고등학교', '오조리 입구', '성산항'];
+  assert.equal(tripsFor(t, plain).length, 0); // 엄격: 오조 X 때문에 다 빠짐
+  assert.deepEqual(tripsFor(t, plain, '', true).map((r) => r[0][1]), [360]);
+  assert.deepEqual(tripsFor(t, viaSchool, '', true).map((r) => r[0][1]), [380]);
+});

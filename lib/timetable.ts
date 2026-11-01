@@ -50,7 +50,7 @@ export function sameStop(col: string, stop: string): boolean {
 // 노선에 없는 이름의 시각은 건너뛴다: BIS 노선이 표의 노선을 토막 낸 것이 많고, 표의 이름이 줄임말("제주여중고")이라 못 맞추는 곳도 있다.
 // 기준점이 노선 길이의 절반 이상을 덮고, 노선에 있는 정류장을 X(안 감)로 표시하지 않아야 한다.
 // no = BIS 노선 번호("292-2"). 표에 노선번호 열이 있으면(한 표에 291·292·293이 섞임) 같은 번호의 행만 쓴다.
-export function tripsFor(tab: Tab, stops: string[], no = ''): Trip[] {
+export function tripsFor(tab: Tab, stops: string[], no = '', loose = false): Trip[] {
   const noCol = tab.cols.findIndex((c) => /노선번호/.test(c));
   const base = no.split('-')[0];
   // 한 열에 맞는 정류장 이름이 여럿이면 다른 이름에 말을 덧붙인 이름은 뺀다(숫자 붙은 "공항3"·"동광환승정류장1"은 그대로) ("제주대" 열 → 제주대학교, 제주대학교병원 아님)
@@ -85,16 +85,22 @@ export function tripsFor(tab: Tab, stops: string[], no = ''): Trip[] {
     const timed = new Set(row.flatMap((v, j) => (parseTime(v ?? '') !== null ? cand[j] ?? [] : [])));
     // "(경유)" 열에 시각이 있는데 그 경유지가 하나도 이 노선에 없으면 경유하는 다른 변형의 운행이다
     // ("봉성(경유)"처럼 다른 열과 같은 정류장에만 맞는 건 경유지로 치지 않음)
-    const isVia = (j: number) => /경유/.test(tab.cols[j]) && parseTime(row[j] ?? '') !== null;
+    // 경유 열의 ○도 그 경유지로 간다는 표시다
+    const isVia = (j: number) => /경유/.test(tab.cols[j]) && (parseTime(row[j] ?? '') !== null || /^[○◯]$/.test((row[j] ?? '').trim()));
     const plain = new Set(row.flatMap((v, j) => (!/경유/.test(tab.cols[j]) && parseTime(v ?? '') !== null ? cand[j] ?? [] : [])));
     const viaCols = row.map((_, j) => j).filter(isVia);
-    const viaOther = viaCols.length > 0 && !viaCols.some((j) => cand[j]?.some((o) => !plain.has(o)));
+    const exact = (j: number, o: number) => { const core = split(norm(stops[o]))[0], v = norm(tab.cols[j]).replace(/고$/, '고등학교'); return core === v || core.endsWith(v); };
+    const viaOther = viaCols.length > 0 && !viaCols.some((j) => cand[j]?.some((o) => !plain.has(o) || (loose && exact(j, o))));
     // 표에서 첫 시각보다 뒤 열의 X가 노선의 출발점 앞 정류장에만 맞으면 순환 노선의 앞쪽이라 무시 (346번: 끝 열 "영주고" X ↔ 노선 0번 영주고)
     const firstCol = row.findIndex((v, j) => cand[j] && parseTime(v ?? '') !== null);
     const xHits = (j: number, o: number) => !timed.has(o) && (o > lo || j < firstCol);
     // 노선 종점 열이 X면 이 운행은 종점까지 안 간다. 번호가 같아도 거른다 (356번: 대부분 제주대까지, 등교 시간 2회만 영주고까지)
     const endX = row.some((v, j) => v === 'X' && cand[j]?.some((o) => o > hi && o >= stops.length - 2));
-    const skipped = endX || viaOther || (!(base && rowNo) && row.some((v, j) => v === 'X' && cand[j]?.some((o) => xHits(j, o))));
+    // loose: 경유 열의 X는 이름이 그대로 맞는 정류장("한라수목원", "세화고"=세화고등학교)에만 적용한다.
+    // "오조(경유)"는 오조리 마을 안쪽인데 201번 모든 변형의 "오조리 입구"에도 글자가 맞아서 X 때문에 운행이 거의 다 빠진다. 단순화: 경유 변형의 운행이 몇 분 차이로 섞일 수 있음
+    // (이름이 그대로 맞으면 "세화" 열이 글자로 세화고등학교에 맞아 시각이 있어도 X를 따른다)
+    const xStops = (j: number, o: number) => (loose && /경유/.test(tab.cols[j]) ? exact(j, o) && (o > lo || j < firstCol) : xHits(j, o));
+    const skipped = endX || viaOther || (!(base && rowNo) && row.some((v, j) => v === 'X' && cand[j]?.some((o) => xStops(j, o))));
     const m = dayMask(tab.way ?? '', row);
     if (m !== EVERY_DAY) anchors.m = m;
     if (!skipped) trips.push(anchors);

@@ -40,7 +40,10 @@ for (const r of routes) {
   const own = allTabs.filter((t) => t.rows.some((row) => endsHere(t, row)));
   // 표의 노선번호로 거른 행 먼저. BIS 번호가 표와 다르면(BIS "800-51" = 표 "801번") 번호 없이 이름 순서로만 맞춘다
   const build = (tabsOf) => buildEntry(tabsOf.flatMap((t) => tripsFor(t, stops, r.no)), cum) ?? buildEntry(tabsOf.flatMap((t) => tripsFor(t, stops)), cum);
-  const e = (own.length && build(own)) || build(allTabs);
+  const looseBuild = (tabsOf) => buildEntry(tabsOf.flatMap((t) => tripsFor(t, stops, r.no, true)), cum);
+  // 글자만 겹치는 경유 열의 X를 빼고 보면 운행이 3배 넘게 늘면 그 X는 변형을 못 가르는 것으로 본다 (201번 "오조(경유)")
+  const strict = (own.length && build(own)) || build(allTabs), loose = own.length ? looseBuild(own) : undefined;
+  const e = loose && loose.t.length > 3 * (strict?.t.length ?? 0) ? loose : strict;
   if (e) out[r.id] = { ...e, n: r.stops.length }; // n = 만들 때 정류장 수. 노선만 갱신되고 시간표 갱신이 실패하면 서버가 이 값으로 걸러낸다
 }
 await writeFile('data/timetable.json', JSON.stringify(out));

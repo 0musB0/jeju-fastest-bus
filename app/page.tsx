@@ -235,7 +235,17 @@ export default function Home() {
         .map((r) => applyRealtime(r, results, headways, sched))
         .map((r) => ({ ...r, eta: arrivalMin(r.candidate) }))
         .sort((a, b) => (a.eta ? 0 : 1) - (b.eta ? 0 : 1) || (a.eta?.min ?? a.odsayMin) - (b.eta?.min ?? b.odsayMin));
-      setRoutes(ranked.slice(0, 3));
+      // 오늘 운행이 끝나 내일 첫차를 타야 하는 경로는 보여주지 않는다 (첫차 전 새벽은 오늘 안이라 그대로 둠)
+      const nowMin = kstMinutes(new Date());
+      const ended = (r: (typeof ranked)[number]) => !r.eta && r.firstBus !== undefined && r.firstBus <= nowMin;
+      const shown = ranked.filter((r) => !ended(r));
+      if (!shown.some((r) => r.eta) && ranked.some(ended)) {
+        setRoutes([]);
+        setAt(null);
+        const first = Math.min(...ranked.filter(ended).map((r) => r.firstBus!));
+        return setMsg(`막차가 끝났어요. 내일 첫차는 ${clock12(first)}부터예요.`);
+      }
+      setRoutes(shown.slice(0, 3));
       if (!refresh) setSelKey('');
       setAt(new Date());
       setMsg('');
