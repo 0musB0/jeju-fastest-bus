@@ -88,3 +88,12 @@ test('많이 돌아가는 노선은 같은 두 정류장을 이어도 한 구간
   const r = findTrips({ lat: 33.5, lng: 126.5 }, { lat: 33.5202, lng: 126.5 }, indexData(stations, routes), ride);
   assert.deepEqual(r[0].legs[0].routeIds, ['1']);
 });
+
+test('노선 모양이 지나지 않는 정류장이 5개 이상 끼어 있으면 빈칸으로 (순번은 유지)', async () => {
+  const { maskOffShape } = await import('./direct.ts');
+  const r = { id: '1', no: '212-52', to: '', stops: ['A', 'B', 'T', 'x1', 'x2', 'x3', 'x4', 'x5', 'T2'] };
+  const [m] = maskOffShape([r], { '1': { p: [], s: [0, 3, 9, -1, -1, -1, -1, -1, 9] } });
+  assert.deepEqual(m.stops, ['A', 'B', 'T', '', '', '', '', '', 'T2']);
+  const [k] = maskOffShape([r], { '1': { p: [], s: [0, 3, 9, -1, -1, -1, 9, 9, 9] } }); // 3개는 정류장 맞추기 오차일 수 있어 그대로
+  assert.deepEqual(k.stops, r.stops);
+});

@@ -13,6 +13,26 @@ export type Trip = { legs: TripLeg[]; walkAfterMin: number; cost: number; walkAf
 export type Shapes = Record<string, { p: number[]; s: number[] }>;
 export type RideMin = (route: BusRoute, i: number, j: number) => number;
 
+// 버스 정보 시스템 노선 목록에는 종점 뒤에 다른 운행 계통의 정류장이 덧붙은 것이 있다
+// (212-52: 제주버스터미널 종점 뒤에 제주대학교·제대아파트… 를 돌아 다시 터미널). 사이트의 노선 모양(shapes)이 지나지 않는
+// 정류장이 5개 이상 이어지고 그 뒤에 모양이 다시 이어지면, 그 정류장들을 빈칸('')으로 바꾼다. 순번(시간표·모양의 기준)은 그대로 둔다.
+// 단순화: 모양이 없는 노선과 끝부분의 어긋남(모양이 덜 그려졌을 수 있음)은 그대로 둔다.
+export function maskOffShape(routes: BusRoute[], shapes: Shapes): BusRoute[] {
+  return routes.map((r) => {
+    const s = shapes[r.id]?.s;
+    if (!s || s.length !== r.stops.length) return r;
+    let stops = r.stops;
+    for (let k = 1; k < s.length; ) {
+      if (s[k] !== -1) { k++; continue; }
+      let e = k;
+      while (e < s.length && s[e] === -1) e++;
+      if (e - k >= 5 && e < s.length && s[e] >= s[k - 1]) stops = stops.map((id, n) => (n >= k && n < e ? '' : id));
+      k = e;
+    }
+    return stops === r.stops ? r : { ...r, stops };
+  });
+}
+
 export function distM(a: Pt, b: Pt): number {
   const R = 6371000, rad = Math.PI / 180;
   const x = (b.lng - a.lng) * rad * Math.cos(((a.lat + b.lat) / 2) * rad);
