@@ -19,7 +19,7 @@ const index = indexData(stations, routes, shapeData as Shapes);
 const rideMin: RideMin = (r, i, j) => {
   const e = timetable[r.id];
   const m = e ? offsetAt(e.p, j) - offsetAt(e.p, i) : 0;
-  return Math.round(m > 0 ? m : roughRide(index, r, i, j));
+  return Math.round(m >= 1 ? m : roughRide(index, r, i, j)); // 1분 미만은 시간표 보간 오차로 보고 어림값
 };
 const ID = /^\d{9}$/;
 const MAX_ROUTES = 10; // 실시간 조회 노선 수
