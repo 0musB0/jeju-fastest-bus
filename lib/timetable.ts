@@ -40,6 +40,7 @@ export function sameStop(col: string, stop: string): boolean {
   const [cCore, cHint] = split(c), [sCore, sHint] = split(s);
   if (cHint.includes('(') && norm(cHint) === s) return true; // "공항(제주국제공항3(용담,시청))"
   if (!cHint && cCore.length >= 3 && sHint.includes(cCore)) return true; // "조천리사무소" ↔ "조천환승정류장(조천리사무소)"
+  if (cHint.length >= 3 && (!sHint || sHint === '종점') && sCore.startsWith(cHint)) return true; // "도두동(도리초등학교)" ↔ "도리초등학교(종점)"
   const short = cCore.length < sCore.length ? cCore : sCore;
   if (short.length < 2 || !(sCore.includes(cCore) || cCore.includes(sCore))) return false;
   return !cHint || !sHint || cHint.includes('(') || sHint.includes(cHint) || cHint.includes(sHint);
@@ -73,16 +74,19 @@ export function tripsFor(tab: Tab, stops: string[], no = ''): Trip[] {
     if (hi - lo < stops.length / 2) continue;
     // X(안 감)인 정류장이 노선에 있으면 다른 변형(일찍 끝나거나 늦게 시작)의 운행이다
     // 단, 같은 정류장이 다른 열(예: "봉성"과 "봉성(경유)")에서 시각으로 나오면 그 X는 다른 경로 표시라 무시한다.
-    // 행의 노선 번호가 맞으면 이름이 정확히 같은 정류장만 본다 ("하가" X인데 노선에 "하가 입구"가 있는 경우는 지나가는 것)
+    // 행의 노선 번호가 이 노선과 같으면 X는 보지 않는다: 이미 번호로 골랐고, 표의 X와 BIS 정류장 이름이 자주 어긋난다
+    // ("하가" X인데 노선에 "하가 입구", 652번 "월평마을" X인데 BIS 652에도 "월평마을"). 단순화: 같은 번호의 변형끼리는 운행이 섞일 수 있음
     const timed = new Set(row.flatMap((v, j) => (parseTime(v ?? '') !== null ? cand[j] ?? [] : [])));
-    const exact = (j: number, o: number) => !rowNo || norm(split(stops[o])[0]) === norm(split(tab.cols[j])[0]);
     // "(경유)" 열에 시각이 있는데 그 경유지가 하나도 이 노선에 없으면 경유하는 다른 변형의 운행이다
     // ("봉성(경유)"처럼 다른 열과 같은 정류장에만 맞는 건 경유지로 치지 않음)
     const isVia = (j: number) => /경유/.test(tab.cols[j]) && parseTime(row[j] ?? '') !== null;
     const plain = new Set(row.flatMap((v, j) => (!/경유/.test(tab.cols[j]) && parseTime(v ?? '') !== null ? cand[j] ?? [] : [])));
     const viaCols = row.map((_, j) => j).filter(isVia);
     const viaOther = viaCols.length > 0 && !viaCols.some((j) => cand[j]?.some((o) => !plain.has(o)));
-    const skipped = viaOther || row.some((v, j) => v === 'X' && cand[j]?.some((o) => !timed.has(o) && exact(j, o)));
+    // 표에서 첫 시각보다 뒤 열의 X가 노선의 출발점 앞 정류장에만 맞으면 순환 노선의 앞쪽이라 무시 (346번: 끝 열 "영주고" X ↔ 노선 0번 영주고)
+    const firstCol = row.findIndex((v, j) => cand[j] && parseTime(v ?? '') !== null);
+    const xHits = (j: number, o: number) => !timed.has(o) && (o > lo || j < firstCol);
+    const skipped = viaOther || (!(base && rowNo) && row.some((v, j) => v === 'X' && cand[j]?.some((o) => xHits(j, o))));
     const m = dayMask(tab.way ?? '', row);
     if (m !== EVERY_DAY) anchors.m = m;
     if (!skipped) trips.push(anchors);

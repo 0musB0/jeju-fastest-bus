@@ -16,6 +16,14 @@ for (const t of tabs) {
   if (!o || day(t.date) > day(o.date) || (day(t.date) === day(o.date) && t.id > o.id)) latest.set(k, t);
 }
 const byBase = Map.groupBy([...latest.values()], (t) => t.base);
+// 머리글이 빠지고 첫 행이 머리글 자리에 들어간 표(785 토·공휴일 등): 같은 번호에서 출발지가 같고 열 수가 같은 표의 머리글을 빌린다
+const isTime = (c) => /^\d{1,2}:\d{2}/.test(c);
+for (const ts of byBase.values()) for (const t of ts) {
+  if (t.cols.filter(isTime).length < 2) continue;
+  const start = t.way.replace(/<[^>]*>/g, '').split('→')[0].replace(/\s/g, '');
+  const donor = ts.find((o) => o !== t && o.cols.length === t.cols.length && !o.cols.some(isTime) && o.cols[0].replace(/\s/g, '') === start);
+  if (donor) (t.rows = [t.cols, ...t.rows]), (t.cols = donor.cols);
+}
 
 const out = {};
 for (const r of routes) {
