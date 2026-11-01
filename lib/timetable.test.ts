@@ -98,3 +98,10 @@ test('기준 정류장 사이가 시속 60km보다 빠르면(이름이 같은 �
   const e = buildEntry([[[0, 600], [1, 606], [2, 612], [3, 640]]], cum)!;
   assert.deepEqual(e.p, [0, 0, 1, 6, 2, 12]);
 });
+
+test('노선 종점 열이 X인 운행은 번호가 같아도 그 노선에 붙이지 않는다 (356번 영주고는 등교 시간만)', () => {
+  const t = { cols: ['노선번호', '수산', '보건소', '제주대', '영주고', '비고'], rows: [['356번', '06:23', '07:23', '07:46', '07:53', ''], ['356번', '07:00', '08:00', '08:23', 'X', '']] };
+  const toYeongju = ['수산', 'a', '보건소', 'b', '제주대', '영주고'], toUniv = toYeongju.slice(0, 5);
+  assert.equal(tripsFor(t, toYeongju, '356-3').length, 1);
+  assert.equal(tripsFor(t, toUniv, '356-1').length, 2);
+});

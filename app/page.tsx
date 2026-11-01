@@ -24,8 +24,11 @@ const ASKS = ['어디 감수꽈?', '어드레 가카마씸?', '오늘은 어드�
 const clock12 = (m: number) => `${Math.floor(m / 60) % 12 || 12}:${String(m % 60).padStart(2, '0')} ${m % 1440 < 720 ? 'AM' : 'PM'}`;
 // 경로 구분 열쇠: 구간마다 탈 정류장과 버스
 const routeKey = (r: { rides: { from: string; busNos: string[] }[] }) => r.rides.map((x) => `${x.from}:${x.busNos.join('/')}`).join('|');
-// 버스 번호는 4개까지, 나머지는 "+N"
-const chips = (nos: string[]) => [...nos.slice(0, 4).map((n) => <span key={n} className="chip">{n}</span>), ...(nos.length > 4 ? [<span key="+" className="chip more">+{nos.length - 4}</span>] : [])];
+// 버스 번호는 4개까지, 나머지는 "+N" (누르면 다 펼침)
+const chips = (nos: string[], open: boolean, onOpen: () => void) => [
+  ...(open ? nos : nos.slice(0, 4)).map((n) => <span key={n} className="chip">{n}</span>),
+  ...(!open && nos.length > 4 ? [<button key="+" type="button" className="chip more" aria-label={`버스 ${nos.length - 4}개 더 보기`} onClick={(e) => { e.stopPropagation(); onOpen(); }}>+{nos.length - 4}</button>] : []),
+];
 const busNumbers = (nos: string[]) => [...new Set(nos.map((n) => n.replace(/\(.*\)/, '').replace(/-\d+$/, '').trim()))];
 // "하귀환승정류장(하귀하나로마트)" → ["하귀환승정류장", "하귀하나로마트"]. 괄호는 길 건너 같은 이름 정류장을 가리는 힌트라 작게 남긴다.
 const splitStop = (name: string) => {
@@ -147,6 +150,7 @@ export default function Home() {
   const [at, setAt] = useState<Date | null>(null);
   const [msg, setMsg] = useState('');
   const [rtDown, setRtDown] = useState(false); // 실시간 서버가 응답하지 않아 시간표로만 계산했는지
+  const [opened, setOpened] = useState<string[]>([]); // 버스 번호를 다 펼친 경로
   const [selKey, setSelKey] = useState(''); // 고른 경로: 30초 갱신으로 순서가 바뀌어도 같은 경로를 따라간다
 
   const odsayErr = useRef('');
@@ -292,7 +296,7 @@ export default function Home() {
             onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelKey(key); } }}>
             <div className="row" style={{ alignItems: 'flex-start' }}>
               <div style={{ flex: 1 }}>
-                <div className="chips">{chips(busNumbers(r.rides[0].busNos))}</div>
+                <div className="chips">{chips(busNumbers(r.rides[0].busNos), opened.includes(key), () => setOpened([...opened, key]))}</div>
                 <div className="board"><b>{stop}</b>에서 타요{side && <div className="muted side">{side} 쪽</div>}</div>
               </div>
               <div className="arrive">

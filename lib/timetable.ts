@@ -86,7 +86,9 @@ export function tripsFor(tab: Tab, stops: string[], no = ''): Trip[] {
     // 표에서 첫 시각보다 뒤 열의 X가 노선의 출발점 앞 정류장에만 맞으면 순환 노선의 앞쪽이라 무시 (346번: 끝 열 "영주고" X ↔ 노선 0번 영주고)
     const firstCol = row.findIndex((v, j) => cand[j] && parseTime(v ?? '') !== null);
     const xHits = (j: number, o: number) => !timed.has(o) && (o > lo || j < firstCol);
-    const skipped = viaOther || (!(base && rowNo) && row.some((v, j) => v === 'X' && cand[j]?.some((o) => xHits(j, o))));
+    // 노선 종점 열이 X면 이 운행은 종점까지 안 간다. 번호가 같아도 거른다 (356번: 대부분 제주대까지, 등교 시간 2회만 영주고까지)
+    const endX = row.some((v, j) => v === 'X' && cand[j]?.some((o) => o > hi && o >= stops.length - 2));
+    const skipped = endX || viaOther || (!(base && rowNo) && row.some((v, j) => v === 'X' && cand[j]?.some((o) => xHits(j, o))));
     const m = dayMask(tab.way ?? '', row);
     if (m !== EVERY_DAY) anchors.m = m;
     if (!skipped) trips.push(anchors);
