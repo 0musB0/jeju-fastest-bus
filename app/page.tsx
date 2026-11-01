@@ -29,8 +29,21 @@ const splitStop = (name: string) => {
   return m ? [m[1], m[2]] : [name, ''];
 };
 
-function PlacePicker({ label, value, onPick, allowHere }: { label: string; value: Place | null; onPick: (p: Place | null) => void; allowHere?: boolean }) {
+// 즐겨찾는 도착지: 이 기기 브라우저에만 저장 (로그인 없음, 다른 기기와는 공유 안 됨)
+const FAVS = 'favs';
+const sameSpot = (a: Place, b: Place) => a.name === b.name && Math.abs(a.lat - b.lat) < 1e-5 && Math.abs(a.lng - b.lng) < 1e-5;
+
+function PlacePicker({ label, value, onPick, allowHere, favorites }: { label: string; value: Place | null; onPick: (p: Place | null) => void; allowHere?: boolean; favorites?: boolean }) {
   const [q, setQ] = useState('');
+  const [favs, setFavs] = useState<Place[]>([]);
+  useEffect(() => {
+    if (favorites) try { setFavs(JSON.parse(localStorage.getItem(FAVS) ?? '[]')); } catch {}
+  }, [favorites]);
+  const saveFavs = (next: Place[]) => {
+    setFavs(next);
+    try { localStorage.setItem(FAVS, JSON.stringify(next)); } catch {}
+  };
+  const isFav = !!value && favs.some((f) => sameSpot(f, value));
   const [list, setList] = useState<Place[]>([]);
   const [msg, setMsg] = useState('');
 
@@ -72,6 +85,12 @@ function PlacePicker({ label, value, onPick, allowHere }: { label: string; value
       {value ? (
         <div className="row">
           <span className="place">{value.name}</span>
+          {favorites && value.name !== '현재 위치' && (
+            <button className={isFav ? 'fav on' : 'fav'} aria-pressed={isFav}
+              onClick={() => saveFavs(isFav ? favs.filter((f) => !sameSpot(f, value)) : [...favs, { name: value.name, address: value.address, lat: value.lat, lng: value.lng }])}>
+              {isFav ? '저장됨' : '저장'}
+            </button>
+          )}
           <button onClick={() => onPick(null)}>바꾸기</button>
         </div>
       ) : (
@@ -85,6 +104,16 @@ function PlacePicker({ label, value, onPick, allowHere }: { label: string; value
               <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="3" fill="currentColor" /><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" strokeWidth="1.5" /></svg>
               현재 위치 사용
             </button>
+          )}
+          {favorites && favs.length > 0 && !list.length && (
+            <div className="favs">
+              {favs.map((f) => (
+                <span key={`${f.lat},${f.lng},${f.name}`} className="favchip">
+                  <button onClick={() => onPick(f)}>{f.name}</button>
+                  <button className="x" aria-label={`${f.name} 즐겨찾기에서 빼기`} onClick={() => saveFavs(favs.filter((g) => g !== f))}>×</button>
+                </span>
+              ))}
+            </div>
           )}
           {list.map((p) => (
             <button key={`${p.lat},${p.lng},${p.name}`} className="pick" onClick={() => { onPick(p); setList([]); setQ(''); }}>
@@ -213,7 +242,7 @@ export default function Home() {
       </h1>
       <p className="lead">제주 버스, 가까운 정류장이 아니라 목적지에 가장 먼저 닿는 버스를 찾아요.</p>
       <PlacePicker label="출발지" value={from} onPick={setFrom} allowHere />
-      <PlacePicker label="도착지" value={to} onPick={setTo} />
+      <PlacePicker label="도착지" value={to} onPick={setTo} favorites />
       {msg && <p className="muted">{msg}</p>}
       {at && routes.length > 0 && (
         <div className="meta">
