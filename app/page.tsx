@@ -86,9 +86,11 @@ function PlacePicker({ label, value, onPick, allowHere, favorites }: { label: st
         <div className="row">
           <span className="place">{value.name}</span>
           {favorites && value.name !== '현재 위치' && (
-            <button className={isFav ? 'fav on' : 'fav'} aria-pressed={isFav}
+            <button className={isFav ? 'fav on' : 'fav'} aria-pressed={isFav} aria-label={isFav ? '즐겨찾기에서 빼기' : '즐겨찾기에 저장'}
               onClick={() => saveFavs(isFav ? favs.filter((f) => !sameSpot(f, value)) : [...favs, { name: value.name, address: value.address, lat: value.lat, lng: value.lng }])}>
-              {isFav ? '저장됨' : '저장'}
+              <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 2.8l2.8 5.8 6.3.9-4.6 4.4 1.1 6.3L12 17.2l-5.6 3 1.1-6.3L2.9 9.5l6.3-.9z" fill={isFav ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+              </svg>
             </button>
           )}
           <button onClick={() => onPick(null)}>바꾸기</button>
