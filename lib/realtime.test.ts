@@ -45,7 +45,7 @@ test('실시간 쌍과 분 변환: 두 노선을 합쳐 가까운 순, 정류장
 
 test('우리 후보: ODsay에 이미 있는 노선·정류장은 빼고 화면 후보로, 요금은 환승 규칙', () => {
   const pt = { lat: 33.5, lng: 126.5 };
-  const l = { routeIds: ['405136501'], nos: ['365'], fromId: '405000153', fromName: '공항', toName: '시청', stops: 4, walkBeforeMin: 2.4, rideMin: 8, distM: 3000, fromPt: pt, toPt: pt, path: [] };
+  const l = { routeIds: ['405136501'], nos: ['365'], fromId: '405000153', fromName: '공항', toId: '405000154', toName: '시청', stops: 4, walkBeforeMin: 2.4, rideMin: 8, distM: 3000, fromPt: pt, toPt: pt, path: [] };
   const t = { legs: [l], walkAfterMin: 1, cost: 11 };
   assert.equal(tripsToRoutes([t], [route]).length, 0);
   const [r] = tripsToRoutes([{ ...t, legs: [{ ...l, routeIds: ['405999999'] }, { ...l, nos: ['101'], routeIds: ['405888888'], distM: 30000, walkBeforeMin: 3 }] }], [route]);

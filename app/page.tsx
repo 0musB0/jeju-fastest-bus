@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { arrivalMin, kstClock12 as kstClock } from '@/lib/eta';
 import { BOARD_MARGIN_MIN } from '@/lib/config';
+import { kstMinutes } from '@/lib/timetable';
 import { parseOdsay, type Route } from '@/lib/odsay';
 import { applyRealtime, tripsToRoutes, realtimeKeys, type Headways, type PlanResults, type Schedules } from '@/lib/realtime';
 import type { Trip } from '@/lib/direct';
@@ -102,28 +103,43 @@ export default function Home() {
 
   const odsayErr = useRef('');
   const odsayRef = useRef<Route[] | null>(null); // 출발·도착이 같으면 ODsay 경로는 다시 부르지 않는다 (일일 한도)
+  const reqId = useRef(0); // 새 검색마다 1씩 늘린다. 늦게 온 이전 검색·갱신 응답은 버린다.
+  const live = useRef(false); // 결과가 화면에 있을 때만 자동 갱신
 
   // 출발·도착이 바뀌면 ODsay로 경로 후보를 받고, 30초마다 실시간·시간표만 다시 계산한다.
   async function plan(refresh = false) {
-    if (!from || !to) return;
+    if (refresh && !live.current) return;
+    const id = refresh ? reqId.current : ++reqId.current;
+    const stale = () => id !== reqId.current;
     if (!refresh) {
+      live.current = false;
       odsayRef.current = null;
-      setMsg('경로 계산 중...');
       setRoutes([]);
+      setAt(null);
+      setMsg(from && to ? '경로 계산 중...' : '');
     }
+    if (!from || !to) return; // "바꾸기": 옛 결과를 지우고 끝
     try {
       // ODsay는 Web 키로 브라우저에서 직접 호출한다 (서버 호출 금지). SearchPathType=2: 버스만.
-      if (!odsayRef.current) {
-        const body = await fetch(`https://api.odsay.com/v1/api/searchPubTransPathT?${new URLSearchParams({
-          SX: String(from.lng), SY: String(from.lat), EX: String(to.lng), EY: String(to.lat), SearchPathType: '2', apiKey: ODSAY_KEY,
-        })}`).then((r) => r.json());
-        const parsed = parseOdsay(body);
-        // ODsay는 보조: 실패해도(일일 한도 초과 등) 우리 데이터로 찾은 직행·환승 경로를 보여준다
-        odsayErr.current = !parsed.ok && parsed.reason !== '경로 없음' ? (/429|quota/i.test(parsed.reason) ? '경로를 찾지 못했어요. (보조 경로 검색 한도 초과, 내일 다시 채워져요)' : parsed.reason) : '';
-        // 실시간 버스 위치로 대기를 채우고, 서버가 찾은 직행 후보를 더한다. ODsay가 경로를 못 찾아도 직행 후보는 본다.
-        odsayRef.current = parsed.ok ? [...parsed.routes].sort((a, b) => a.odsayMin - b.odsayMin) : [];
+      // ODsay는 보조: 오류·한도 초과·무응답(5초)이어도 우리 데이터로 찾은 직행·환승 경로를 보여준다
+      let odsay = odsayRef.current;
+      if (!odsay) {
+        let parsed: ReturnType<typeof parseOdsay>;
+        try {
+          const body = await fetch(`https://api.odsay.com/v1/api/searchPubTransPathT?${new URLSearchParams({
+            SX: String(from.lng), SY: String(from.lat), EX: String(to.lng), EY: String(to.lat), SearchPathType: '2', apiKey: ODSAY_KEY,
+          })}`, { signal: AbortSignal.timeout(5000) }).then((r) => r.json());
+          parsed = parseOdsay(body);
+        } catch {
+          parsed = { ok: false, reason: '응답 없음' };
+        }
+        if (stale()) return;
+        odsayErr.current = !parsed.ok && parsed.reason !== '경로 없음'
+          ? (/429|quota/i.test(parsed.reason) ? '경로를 찾지 못했어요. (보조 경로 검색 한도 초과, 내일 다시 채워져요)' : '경로를 찾지 못했어요. 잠시 뒤 다시 시도해 주세요.')
+          : '';
+        odsay = parsed.ok ? [...parsed.routes].sort((a, b) => a.odsayMin - b.odsayMin) : [];
+        odsayRef.current = odsay;
       }
-      const odsay = odsayRef.current;
       let results: PlanResults = {};
       let headways: Headways = {};
       let sched: Schedules = {};
@@ -139,7 +155,11 @@ export default function Home() {
         trips = r.trips ?? [];
         // ODsay 경로의 지도 선을 노선 모양(도로)으로 바꾼다
         for (const o of odsay) for (const x of o.rides) if (r.paths?.[pathKey(x)]?.length > 1) x.path = r.paths[pathKey(x)];
-      } catch { /* 실시간 실패: 아래에서 추정 불가로 표시 */ }
+      } catch {
+        if (refresh) return; // 갱신 중 한 번 끊기면 이전 결과를 그대로 둔다
+        /* 첫 검색: ODsay 경로만, 대기는 추정 불가로 표시 */
+      }
+      if (stale()) return;
       // ODsay 경로가 있으면, 그보다 이동만 1.5배 넘게 걸리는 우리 후보는 뺀다
       const bestOdsay = odsay[0]?.odsayMin ?? Infinity;
       const byTime = [...odsay, ...tripsToRoutes(trips, odsay).filter((r) => r.odsayMin <= bestOdsay * 1.5)];
@@ -153,18 +173,20 @@ export default function Home() {
       if (!refresh) setSel(0);
       setAt(new Date());
       setMsg('');
+      live.current = true;
     } catch {
-      if (!refresh) setMsg('경로 API에 연결하지 못했어요. 잠시 뒤 다시 시도해 주세요.');
+      if (!refresh && !stale()) setMsg('경로를 계산하지 못했어요. 잠시 뒤 다시 시도해 주세요.');
     }
   }
 
   useEffect(() => { plan(); }, [from, to]); // eslint-disable-line react-hooks/exhaustive-deps
-  // 자동 갱신: 결과가 있고 화면을 보고 있을 때만 30초마다 (서버의 실시간 캐시가 20초)
+  // 자동 갱신: 화면을 보고 있을 때 30초마다 (서버의 실시간 캐시가 20초), 다른 탭·잠금에서 돌아오면 바로
   useEffect(() => {
-    if (!at) return;
-    const id = setTimeout(() => document.visibilityState === 'visible' && plan(true), 30_000);
-    return () => clearTimeout(id);
-  }, [at]); // eslint-disable-line react-hooks/exhaustive-deps
+    const tick = () => { if (document.visibilityState === 'visible') plan(true); };
+    const id = setInterval(tick, 30_000);
+    document.addEventListener('visibilitychange', tick);
+    return () => { clearInterval(id); document.removeEventListener('visibilitychange', tick); };
+  }, [from, to]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <main>
@@ -192,7 +214,7 @@ export default function Home() {
         const walk = r.candidate.legs.reduce((s, l) => s + l.walkBeforeMin, r.candidate.walkAfterMin);
         const leg = r.candidate.legs[0];
         // 걸어가서 탈 수 있는 첫 버스
-        const next = leg.nextBusesMin?.find((b) => b >= leg.walkBeforeMin + BOARD_MARGIN_MIN) ?? leg.nextBusesMin?.[0];
+        const next = leg.nextBusesMin?.find((b) => b >= leg.walkBeforeMin + BOARD_MARGIN_MIN);
         const planned = leg.timetableMin?.find((b) => b >= leg.walkBeforeMin + BOARD_MARGIN_MIN);
         const [stop, side] = splitStop(r.rides[0].from);
         return (
@@ -211,18 +233,20 @@ export default function Home() {
               {next !== undefined ? <span className="badge live">버스 {Math.max(0, Math.round(next))}분 뒤 도착</span>
                 : planned !== undefined ? <span className="badge">시간표 기준 {Math.round(planned)}분 뒤</span>
                 : r.eta ? <span className="badge">약 {Math.round(leg.intervalMin ?? 0)}분 간격 (추정)</span>
-                : r.firstBus !== undefined ? <span className="badge warnb">오늘 운행 끝 · 첫차 {clock12(r.firstBus)}</span>
+                : r.firstBus !== undefined ? <span className="badge warnb">{r.firstBus > kstMinutes(at!) ? '첫차 전' : '오늘 운행 끝'} · 첫차 {clock12(r.firstBus)}</span>
                 : <span className="badge warnb">{r.noBusNow ? '지금 운행 중인 버스 없음' : '도착 정보 없음'}</span>}
             </div>
             <ol className="steps">
               {r.rides.slice(1).map((x, j) => {
                 const prev = r.rides[j];
                 const off = splitStop(prev.to)[0], on = splitStop(x.from)[0];
-                const b = r.eta?.boards[j + 1];
+                const b = r.eta?.boards[j + 1], l = r.candidate.legs[j + 1];
+                const ended = !r.eta && !l.timetableMin && !l.intervalMin;
                 return (
                   <li key={j}>
                     <b>{off}</b>에서 내려 <b className="bus">{busNumbers(x.busNos).join(' · ')}</b>번으로 환승
                     {on !== off && <span className="muted"> ({on}까지 걸어서)</span>}
+                    {ended && <div className="warn transfer-eta">환승 버스 시간 정보 없음 · 막차가 지났을 수 있어요</div>}
                     {b && <div className="muted transfer-eta">
                       {b.how === 'interval' ? `약 ${Math.round(b.at)}분 뒤 탑승 (배차 간격 어림)` : `${Math.round(b.at)}분 뒤 도착 · ${kstClock(at!, b.at)} (시간표 기준)`}
                       {b.how !== 'interval' && ` · 환승 여유 ${Math.round(b.at - b.atStop)}분`}

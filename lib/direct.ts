@@ -4,7 +4,7 @@ import { NEAR_STOP_M, WALK_DETOUR, WALK_M_PER_MIN, MIN_PER_STOP, TRANSFER_M, TRA
 export type Station = { id: string; name: string; lat: number; lng: number };
 export type BusRoute = { id: string; no: string; to: string; stops: string[] };
 export type Pt = { lat: number; lng: number };
-export type TripLeg = { routeIds: string[]; nos: string[]; fromId: string; fromName: string; toName: string; stops: number; walkBeforeMin: number; rideMin: number; distM: number; fromPt: Pt; toPt: Pt; path: Pt[] };
+export type TripLeg = { routeIds: string[]; nos: string[]; fromId: string; fromName: string; toId: string; toName: string; stops: number; walkBeforeMin: number; rideMin: number; distM: number; fromPt: Pt; toPt: Pt; path: Pt[] };
 export type Trip = { legs: TripLeg[]; walkAfterMin: number; cost: number };
 // 노선의 i번째 → j번째 정류장 탑승 시간(분). 서버가 시간표로 채워 넘긴다.
 // 노선 모양: p = [위도, 경도, ...], s = 정류장마다 p의 선분 번호(k → k+1), 못 맞추면 -1 (scripts/fetch-shapes.mjs)
@@ -73,7 +73,7 @@ function leg(ix: Index, r: BusRoute, i: number, j: number, walkBeforeMin: number
   const s = ix.byId.get(r.stops[i])!, e = ix.byId.get(r.stops[j])!;
   const path = legPath(ix, r, i, j);
   const d = routeDist(ix, r, i, j);
-  return { routeIds: [r.id], nos: [r.no], fromId: s.id, fromName: s.name, toName: e.name, stops: j - i, walkBeforeMin, rideMin: ride(r, i, j), distM: d, fromPt: { lat: s.lat, lng: s.lng }, toPt: { lat: e.lat, lng: e.lng }, path };
+  return { routeIds: [r.id], nos: [r.no], fromId: s.id, fromName: s.name, toId: e.id, toName: e.name, stops: j - i, walkBeforeMin, rideMin: ride(r, i, j), distM: d, fromPt: { lat: s.lat, lng: s.lng }, toPt: { lat: e.lat, lng: e.lng }, path };
 }
 
 type Seg = { r: BusRoute; m: number; j: number }; // 노선 r의 m번째에서 타서 j번째에서 내림
@@ -166,7 +166,7 @@ export function findTrips(from: Pt, to: Pt, ix: Index, ride: RideMin = defaultRi
   // 같은 정류장에서 타고 내리는 후보(예: 300·301)는 하나로 합친다. ODsay의 lane처럼 "아무거나 먼저 오는 버스".
   const merged = new Map<string, Trip>();
   for (const t of [...best.values()].sort((x, y) => x.cost - y.cost)) {
-    const key = t.legs.map((l) => `${l.fromId}>${l.toName}`).join('|');
+    const key = t.legs.map((l) => `${l.fromId}>${l.toId}`).join('|');
     const o = merged.get(key);
     if (!o) merged.set(key, t);
     else t.legs.forEach((l, n) => l.routeIds.forEach((id, q) => { if (!o.legs[n].routeIds.includes(id)) o.legs[n].routeIds.push(id), o.legs[n].nos.push(l.nos[q]); }));

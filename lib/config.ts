@@ -1,6 +1,5 @@
 // 경로 계산 조절값. 바꿀 때는 이 파일만 고친다.
 export const NEAR_STOP_M = 600; // 출발·도착지에서 정류장을 찾는 반경
-export const STOP_MATCH_M = 30; // 정류장 ID 대응표를 만들 때 같은 정류장으로 보는 거리
 export const WALK_DETOUR = 1.3; // 직선거리 → 실제 걷는 거리 배율
 export const WALK_M_PER_MIN = 70;
 export const BOARD_MARGIN_MIN = 1; // 버스보다 이만큼 먼저 정류장에 닿아야 탈 수 있다
