@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { arrivalMin, kstClock12 as kstClock } from '@/lib/eta';
 import { kstMinutes } from '@/lib/timetable';
 import { parseOdsay, type Route } from '@/lib/odsay';
-import { applyRealtime, tripsToRoutes, rideKeys, stopKeys, onOurRoutes, type Headways, type PlanResults, type Schedules } from '@/lib/realtime';
+import { applyRealtime, tripsToRoutes, rideKeys, stopKeys, onOurRoutes, withOurWalks, type Headways, type PlanResults, type Schedules } from '@/lib/realtime';
 import type { Trip } from '@/lib/direct';
 import RouteMap from './RouteMap';
 
@@ -199,7 +199,9 @@ export default function Home() {
       let trips: Trip[] = [];
       try {
         const pathKey = (x: Route['rides'][number]) => `${x.routeIds[0]}:${x.stationId}:${x.stops}`;
-        const q = new URLSearchParams({ q: rideKeys(odsay, true).slice(0, 30).join(','), later: rideKeys(odsay, false).slice(0, 30).join(','), stops: refresh ? '' : stopKeys(odsay).slice(0, 60).join(','), from: `${from.lat},${from.lng}`, to: `${to.lat},${to.lng}`,
+        const q = new URLSearchParams({ q: rideKeys(odsay, true).slice(0, 30).join(','), later: rideKeys(odsay, false).slice(0, 30).join(','), stops: refresh ? '' : stopKeys(odsay).slice(0, 60).join(','),
+          wf: refresh ? '' : [...new Set(odsay.map((o) => o.rides[0]?.stationId).filter(Boolean))].slice(0, 20).join(','),
+          wt: refresh ? '' : [...new Set(odsay.map((o) => o.rides.at(-1)?.endStationId).filter(Boolean))].slice(0, 20).join(','), from: `${from.lat},${from.lng}`, to: `${to.lat},${to.lng}`,
           paths: refresh ? '' : [...new Set(odsay.slice(0, 6).flatMap((o) => o.rides.map(pathKey)))].join(','), ...(refresh ? { lite: '1' } : {}) });
         const r = await fetch(`/api/plan?${q}`).then((r) => r.json());
         results = r.results ?? {};
@@ -207,7 +209,7 @@ export default function Home() {
         sched = { scheduled: r.scheduled, pending: r.pending, firstBus: r.firstBus };
         trips = r.trips ?? [];
         // ODsay 경로 중 그 버스가 실제로 서지 않는 정류장에서 타거나 내리는 경로는 뺀다 (첫 검색에서 한 번)
-        if (!refresh && r.stopsOk) odsay = odsayRef.current = odsay.filter((o) => onOurRoutes(o, r.stopsOk));
+        if (!refresh && r.stopsOk) odsay = odsayRef.current = odsay.filter((o) => onOurRoutes(o, r.stopsOk)).map((o) => withOurWalks(o, r.walkFrom, r.walkTo));
         // 지도 선은 첫 검색에서만 받는다 (갱신 응답은 빈 선). 구간 = 탈 정류장 > 내릴 정류장 + 노선
         const legKey = (l: Trip['legs'][number]) => `${l.fromId}>${l.toId}>${l.routeIds[0]}`;
         if (!refresh) pathsRef.current.clear();

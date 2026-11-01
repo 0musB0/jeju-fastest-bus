@@ -50,6 +50,15 @@ export const onOurRoutes = (r: Route, ok: Record<string, boolean>) => r.rides.ev
   const ks = x.endStationId ? x.routeIds.filter(Boolean).map((id) => `${id}:${x.stationId}:${x.endStationId}`) : [];
   return !ks.length || ks.some((k) => ok[k] !== false);
 });
+// ODsay 경로의 첫·마지막 걷기를 서버가 길 따라 잰 값으로 (더 길 때만 바꿈)
+export function withOurWalks(r: Route, from: Record<string, number> = {}, to: Record<string, number> = {}): Route {
+  const first = r.rides[0], last = r.rides.at(-1);
+  const w0 = from[first?.stationId ?? ''], w1 = to[last?.endStationId ?? ''];
+  const legs = r.candidate.legs.map((l, i) => (i === 0 && w0 > l.walkBeforeMin ? { ...l, walkBeforeMin: w0 } : l));
+  const walkAfterMin = w1 > r.candidate.walkAfterMin ? w1 : r.candidate.walkAfterMin;
+  const added = legs[0].walkBeforeMin - r.candidate.legs[0].walkBeforeMin + walkAfterMin - r.candidate.walkAfterMin;
+  return added ? { ...r, candidate: { legs, walkAfterMin }, odsayMin: r.odsayMin + added } : r;
+}
 export function rideKeys(routes: Route[], first: boolean): string[] {
   const keyOf = (ride: Route['rides'][number]) => ride.routeIds.filter(Boolean).map((id) => `${id}:${ride.stationId}`);
   return [...new Set(routes.flatMap((r) => (first ? [r.rides[0]] : r.rides.slice(1)).flatMap(keyOf)))];

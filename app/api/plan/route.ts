@@ -6,7 +6,7 @@ import stationList from '@/data/stations.json';
 import routeList from '@/data/routes.json';
 import timetableData from '@/data/timetable.json';
 import { arrivals, firstAt, kstDay, kstMinutes, offsetAt, type Timetable } from '@/lib/timetable';
-import { MIN_PER_STOP } from '@/lib/config';
+import { MIN_PER_STOP, WALK_M_PER_MIN } from '@/lib/config';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { walkGraph, type Walker } from '@/lib/walk';
@@ -128,5 +128,17 @@ export async function GET(req: Request) {
     const i = route.stops.indexOf(a);
     stopsOk[k] = i >= 0 && route.stops.indexOf(b, i + 1) > i;
   }
-  return Response.json({ results, headways, scheduled, pending, firstBus, trips: out, paths, stopsOk });
+  // ODsay 경로의 첫·마지막 걷기도 우리 걷는 길로 잰다 (ODsay 도보 시간이 실제보다 짧은 곳이 있음: 제주대학교입구 → 캠퍼스 안)
+  const walkMins = (pt: { lat: number; lng: number } | null, ids: string | null) => {
+    const res: Record<string, number> = {};
+    const tree = pt ? walker?.tree(pt, 3000) : null;
+    for (const id of tree ? (ids ?? '').split(',').slice(0, 20) : []) {
+      const s = ID.test(id) ? index.byId.get(id) : undefined;
+      const r = s && tree!.to(s);
+      if (r) res[id] = isFinite(r.m) ? Math.round(r.m / WALK_M_PER_MIN) : 999;
+    }
+    return res;
+  };
+  const walkFrom = walkMins(from, p.get('wf')), walkTo = walkMins(to, p.get('wt'));
+  return Response.json({ results, headways, scheduled, pending, firstBus, trips: out, paths, stopsOk, walkFrom, walkTo });
 }

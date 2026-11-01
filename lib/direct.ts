@@ -166,11 +166,14 @@ export function findTrips(from: Pt, to: Pt, ix: Index, ride: RideMin = defaultRi
     const w0 = walkFrom(s).min;
     for (const [a, i] of ix.onStation.get(s.id) ?? []) {
       let last = a.stops.length;
+      // 목적지 근처 정류장 중 타는 시간 + 걷는 시간이 가장 짧은 곳에서 내린다 (첫 정류장보다 한 정류장 더 가서 덜 걷는 게 빠를 때가 많음)
+      let bestJ = -1, bestCost = Infinity;
       for (let j = i + 1; j < a.stops.length; j++) if (ends.has(a.stops[j])) {
-        keep([{ r: a, m: i, j }], w0, w0 + ride(a, i, j) + walkTo(pt(a.stops[j])).min);
-        last = j; // 목적지 근처에 닿기 전의 정류장에서만 갈아탄다
-        break;
+        if (last === a.stops.length) last = j; // 목적지 근처에 닿기 전의 정류장에서만 갈아탄다
+        const c = ride(a, i, j) + walkTo(pt(a.stops[j])).min;
+        if (c < bestCost) (bestCost = c), (bestJ = j);
       }
+      if (bestJ > 0) keep([{ r: a, m: i, j: bestJ }], w0, w0 + bestCost);
       for (let k = i + 1; k < last; k++) {
         const ks = ix.byId.get(a.stops[k]);
         if (!ks) continue;
@@ -195,7 +198,9 @@ export function findTrips(from: Pt, to: Pt, ix: Index, ride: RideMin = defaultRi
     if (!o) merged.set(key, t);
     else t.legs.forEach((l, n) => { if (similar(l.rideMin, o.legs[n].rideMin)) l.routeIds.forEach((id, q) => { if (!o.legs[n].routeIds.includes(id)) o.legs[n].routeIds.push(id), o.legs[n].nos.push(l.nos[q]); }); });
   }
-  const out = [...merged.values()].slice(0, max);
+  const all = [...merged.values()], out = all.slice(0, max);
+  // 직행은 순위용 비용(환승 대기를 10분으로 어림)에 밀려 빠지기 쉽다. 실제 대기를 넣으면 직행이 더 빠른 때가 많아 5개까지는 늘 넣는다
+  for (const t of all.slice(max)) if (t.legs.length === 1 && out.filter((x) => x.legs.length === 1).length < 5) out.push(t);
   // 같은 두 정류장을 잇는 다른 노선도 모두 붙인다. 번호별로 하나만 남겨서 202-5·202-54처럼 같은 번호의 다른 운행 계통이 빠지면,
   // 남은 하나가 지금 안 다닐 때 경로 전체가 "추정 불가"나 몇 시간 대기가 된다.
   // 탑승 시간은 처음 찾은 노선 값을 함께 쓰므로, 많이 돌아가는 노선(예: 직행 15분 vs 우회 45분)은 붙이지 않는다.
