@@ -1,4 +1,4 @@
-import { NEAR_STOP_M, WALK_DETOUR, WALK_M_PER_MIN, MIN_PER_STOP, TRANSFER_M, TRANSFER_PENALTY_MIN, SHORT_HOP_WALK_MIN } from './config.ts';
+import { NEAR_STOP_M, WALK_DETOUR, WALK_M_PER_MIN, MIN_PER_STOP, TRANSFER_M, TRANSFER_PENALTY_MIN, SHORT_HOP_M } from './config.ts';
 
 // 우리 데이터(정류장·노선 JSON)만으로 경로 후보를 찾는다: 직행 + 한 번 환승. ODsay 일일 한도와 상관없이 항상 돈다.
 export type Station = { id: string; name: string; lat: number; lng: number };
@@ -137,10 +137,11 @@ export function findTrips(from: Pt, to: Pt, ix: Index, ride: RideMin = defaultRi
     const legs = segs.map((g, n) => leg(ix, g.r, g.m, g.j, n ? walkMin(pt(segs[n - 1].r.stops[segs[n - 1].j]), pt(g.r.stops[g.m])) : w0, ride));
     return { legs, walkAfterMin: walkMin(pt(segs.at(-1)!.r.stops[segs.at(-1)!.j]), to), cost };
   };
-  // 환승 뒤에 몇 정류장만 타는 구간(예: 하례환승정류장 → 1분 → 갈아탐)은 사람이 타지 않는 경로라 뺀다
-  const shortHop = (g: Seg) => walkMin(pt(g.r.stops[g.m]), pt(g.r.stops[g.j])) <= SHORT_HOP_WALK_MIN;
+  // 버스 세 대 중 가운데를 한두 정류장만 타는 경로(예: 181 → 하례에서 531 1분 → 611)는 사람이 타지 않으니 뺀다.
+  // 마지막 구간은 짧아도 남긴다: 목적지까지 그 버스밖에 없을 수 있다.
+  const shortHop = (g: Seg) => routeDist(ix, g.r, g.m, g.j) < SHORT_HOP_M;
   const keep = (segs: Seg[], w0: number, cost: number) => {
-    if (segs.slice(1).some(shortHop)) return;
+    if (segs.slice(1, -1).some(shortHop)) return;
     const key = segs.map((g) => base(g.r.no)).join('>');
     if ((best.get(key)?.cost ?? Infinity) > cost) best.set(key, build(segs, w0, cost));
   };
