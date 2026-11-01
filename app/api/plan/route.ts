@@ -65,13 +65,13 @@ export async function GET(req: Request) {
   const tripFirst = trips.flatMap((t) => t.legs[0].routeIds.map((r) => [r, t.legs[0].fromId]));
   const tripLater = trips.flatMap((t) => t.legs.slice(1).flatMap((l) => l.routeIds.map((r) => [r, l.fromId])));
 
-  // 실시간 10칸은 모든 후보의 첫 버스로만 채운다. 한 구간에 노선이 여럿 붙어 있으므로 후보마다 하나씩 돌아가며 고른다.
-  const lists = [...pairs.map(([r]) => [r]), ...trips.map((t) => t.legs[0].routeIds)];
+  // 실시간 10칸: ODsay 첫 버스, 우리 후보의 구간들(순위 순, 환승 버스 포함), ODsay 환승 버스 순. 한 구간에 노선이 여럿이라 돌아가며 하나씩 고른다.
+  const lists = [...pairs.map(([r]) => [r]), ...trips.flatMap((t) => t.legs.map((l) => l.routeIds)), ...laterPairs.map(([r]) => [r])];
   const routeIds: string[] = [];
   for (let k = 0; routeIds.length < MAX_ROUTES && lists.some((l) => l.length > k); k++) {
     for (const l of lists) if (l[k] && !routeIds.includes(l[k]) && routeIds.length < MAX_ROUTES) routeIds.push(l[k]);
   }
-  const allPairs = [...pairs, ...tripFirst].filter(([r]) => routeIds.includes(r));
+  const allPairs = [...pairs, ...tripFirst, ...laterPairs, ...tripLater].filter(([r]) => routeIds.includes(r));
   // 제주 서버는 동시에 여러 개를 보내면 전부 3초를 넘긴다(실측). 2개씩 나눠 보낸다.
   const locs = new Map<string, Awaited<ReturnType<typeof busLocation>>>();
   for (let i = 0; i < routeIds.length; i += CONCURRENCY) {

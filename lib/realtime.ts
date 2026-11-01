@@ -74,14 +74,13 @@ export function applyRealtime(route: Route, results: PlanResults, headways: Head
     const freq = ride.routeIds.reduce((s, id) => s + (headways[id] ? 1 / headways[id] : 0), 0);
     const times = keys(ride).flatMap((k) => sched.scheduled?.[k] ?? []).sort((a, b) => a - b);
     const next = { ...leg, ...(freq ? { intervalMin: 1 / freq } : {}), ...(times.length ? { timetableMin: times } : {}) };
-    if (i > 0) return next;
-    const pend = keys(ride).flatMap((k) => sched.pending?.[k] ?? []).sort((a, b) => a - b);
+    const pend = i > 0 ? [] : keys(ride).flatMap((k) => sched.pending?.[k] ?? []).sort((a, b) => a - b);
     if (pend.length) Object.assign(next, { pendingMin: pend });
     // 단순화: 이 구간의 정류장당 평균 소요(탑승 시간 ÷ 정류장 수)를 버스가 오는 길에도 씀, 신호·정차 편차는 무시
     const perStop = ride.stops > 0 && leg.rideMin > 0 ? leg.rideMin / ride.stops : MIN_PER_STOP;
     const found = ride.routeIds.map((id) => results[`${id}:${ride.stationId}`]).filter(Array.isArray);
     const mins = found.flat().map((n) => n * perStop).sort((a, b) => a - b);
-    if (!mins.length && found.length) noBusNow = true;
+    if (!mins.length && found.length && i === 0) noBusNow = true;
     return mins.length ? { ...next, nextBusesMin: mins } : next;
   });
   const firsts = keys(route.rides[0]).map((k) => sched.firstBus?.[k]).filter((v) => v !== undefined);

@@ -22,7 +22,7 @@ test('실시간 버스가 모두 지나가면 배차 간격으로 채운다', ()
   assert.deepEqual({ min: r?.min, source: r?.source }, { min: 10 + 10 + 10, source: 'timetable' });
 });
 
-test('환승: 두 번째 버스는 실시간이 있어도 시간표 기준', () => {
+test('환승: 3분 여유 없이 오는 실시간 버스는 못 타고 다음 수단(배차 간격)으로', () => {
   const r = arrivalMin({
     legs: [
       { walkBeforeMin: 2, nextBusesMin: [4], rideMin: 10 },
@@ -78,4 +78,13 @@ test('실시간에 안 보이는(아직 기점 출발 전) 시간표 버스가 �
   const r2 = arrivalMin({ legs: [{ ...leg, nextBusesMin: [4] }], walkAfterMin: 1 })!;
   assert.equal(r2.min, 15);
   assert.equal(r2.boards[0].how, 'realtime');
+});
+
+test('환승 버스도 실시간 버스가 시간표보다 이르면 그 버스를 탄다', () => {
+  const c = { legs: [{ walkBeforeMin: 2, nextBusesMin: [5], rideMin: 10 }, { walkBeforeMin: 1, nextBusesMin: [10, 20], timetableMin: [150], rideMin: 20 }], walkAfterMin: 3 };
+  const r = arrivalMin(c)!;
+  // 15분에 내려 16분에 환승 정류장, 3분 여유 → 20분 뒤 실시간 버스 (시간표 150분 아님)
+  assert.equal(r.boards[1].at, 20);
+  assert.equal(r.boards[1].how, 'realtime');
+  assert.equal(r.min, 43);
 });

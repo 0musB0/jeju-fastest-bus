@@ -21,8 +21,8 @@ export function arrivalMin(c: Candidate): { min: number; source: WaitSource; boa
   let source: WaitSource = 'realtime';
   for (const [i, leg] of c.legs.entries()) {
     const atStop = t + leg.walkBeforeMin;
-    // 환승 후 두 번째 버스부터는 항상 시간표 기준으로 계산한다.
-    const buses = i === 0 ? (leg.nextBusesMin ?? []) : [];
+    // 환승 버스도 실시간 위치가 있으면 쓴다 (시간표가 낡았거나 빠진 노선: 292번 시간표는 하루 7회인데 실제로 더 다님, 2026-11-01)
+    const buses = leg.nextBusesMin ?? [];
     // 환승 버스는 3분 이상 여유가 있어야 탈 수 있다고 본다 (빠듯한 환승은 다음 차로 계산)
     const canBoard = (b: number) => b >= atStop + (i === 0 ? BOARD_MARGIN_MIN : TRANSFER_MARGIN_MIN);
     const bus = buses.find(canBoard);
@@ -31,7 +31,8 @@ export function arrivalMin(c: Candidate): { min: number; source: WaitSource; boa
     const scheduled = leg.timetableMin?.find(canBoard);
     let board: number;
     let how: Board['how'] = 'timetable';
-    if (bus !== undefined && !(pend !== undefined && pend < bus)) (board = bus), (how = 'realtime');
+    if (i > 0 && bus !== undefined && !(scheduled !== undefined && scheduled < bus)) (board = bus), (how = 'realtime');
+    else if (i === 0 && bus !== undefined && !(pend !== undefined && pend < bus)) (board = bus), (how = 'realtime');
     else if (pend !== undefined) {
       board = pend;
       source = 'timetable';
