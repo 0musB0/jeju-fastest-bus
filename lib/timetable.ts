@@ -11,6 +11,7 @@ export type Timetable = Record<string, Entry>;
 export type Tab = { cols: string[]; rows: string[][]; way?: string; label?: string }; // "노선번호" 열이 있는 표도 있고 없는 표도 있다
 export type Trip = [number, number][] & { m?: number }; // [순번, 시각] 기준점들, m = 요일
 export const EVERY_DAY = 7, WEEKDAY = 1;
+const LATE_MIN = 180; // 03:00. 제주 버스는 이 시각 전에 기점을 떠나는 운행이 없다(심야버스의 자정 넘김만 있음)
 
 // 표 제목·행 글자 → 요일 비트
 function dayMask(way: string, row: string[]): number {
@@ -158,7 +159,8 @@ export function buildEntry(trips: Trip[], cum?: number[]): Entry | null {
   // 기준 순번보다 뒤에서 시작하는 운행(표의 "노형성당 출발")은 출발 순번을 남긴다. 같은 시각이면 더 앞에서 출발하는 쪽
   const byTime = new Map<number, number>(), from = new Map<number, number>();
   for (const tr of trips) {
-    const k = Math.round(tr[0][1] - offsetAt(p, tr[0][0]));
+    let k = Math.round(tr[0][1] - offsetAt(p, tr[0][0]));
+    if (k < LATE_MIN) k += 1440; // 새벽 3시 전 출발은 전날 밤 운행(심야 3001번 00:25)으로: 첫차·막차 순서가 맞게
     byTime.set(k, (byTime.get(k) ?? 0) | (tr.m ?? EVERY_DAY));
     from.set(k, Math.min(from.get(k) ?? Infinity, tr[0][0] > ref ? tr[0][0] : 0));
   }
