@@ -16,6 +16,34 @@
 - 정류장, 노선, 시간표, 노선 모양은 `data/*.json` 정적 파일로 둔다. DB는 쓰지 않는다.
 - 테스트는 `node:test` + `node:assert`로 작성하고 `npm test`로 돌린다. 새 라이브러리는 꼭 필요할 때만 추가한다.
 
+## 파일 지도
+
+새 세션은 이 지도로 구조를 먼저 파악하고, 고칠 파일만 연다. **파일을 더하거나 빼거나 역할을 바꾸면 같은 커밋에서 이 지도도 고친다.**
+
+```
+app/page.tsx          화면 전체(클라이언트). 장소 검색 → ODsay 직접 호출 → /api/plan → applyRealtime → arrivalMin → 정렬·표시, 30초마다 lite 재계산. 즐겨찾기(localStorage)
+app/RouteMap.tsx      결과 지도(카카오맵 JS SDK), 노선 선 그리기
+app/layout.tsx        폰트(Jua)·메타. icon.svg, apple-icon.png, opengraph-image.* = 아이콘·링크 미리보기
+app/globals.css       디자인(모래·현무암·귤색)
+app/api/search        카카오 키워드 검색 프록시(제주 rect 고정)
+app/api/plan          서버 핵심. data/*.json을 import해 findTrips(우리 경로 후보) + 노선별 busopen BusLocation(실시간) + 시간표 도착 시각 + 지도 선(paths)을 돌려줌
+lib/config.ts         조절값 상수 전부
+lib/direct.ts         정류장·노선 인덱스, 거리·걷기, findTrips(직행·환승 2번), legPath
+lib/eta.ts            arrivalMin: 후보 1개의 도착 시각(순수 함수), kstClock 표시
+lib/realtime.ts       BusLocation XML 파싱, 남은 정류장 수, applyRealtime(대기 반영), tripsToRoutes(우리 경로 → 화면용 Route)
+lib/odsay.ts          ODsay 응답 파싱(JEB 접두어 제거), 요금 계산
+lib/timetable.ts      시간표 표 파싱·이름 맞추기·Entry 생성, arrivals/firstAt, kstDay(공휴일 목록)·kstMinutes
+lib/*.test.ts         같은 이름 파일의 테스트 (npm test)
+data/stations.json    정류장 {id,name,lat,lng,dir}      ← scripts/fetch-data.mjs (data.yml, 매달 2일)
+data/routes.json      노선 {id,no,to,stops[]}          ← scripts/fetch-data.mjs
+data/schedules.json   사이트 시간표 원본 표             ← scripts/fetch-schedules.mjs (schedules.yml, 매달 2일)
+data/timetable.json   노선ID → {p,t,m,n} 정류장 순번 기준 ← scripts/build-timetable.mjs
+data/shapes.json      노선ID → {p 좌표, s 정류장 선분}   ← scripts/fetch-shapes.mjs
+scripts/accuracy.mjs  배포된 /api/plan으로 대기 예측 정확도 측정 (accuracy.yml, 수동)
+```
+
+자주 고치는 곳: 조절값은 `lib/config.ts`, 대기·도착 계산은 `lib/eta.ts`·`lib/realtime.ts`, 경로 후보는 `lib/direct.ts`, 화면 문구·배치는 `app/page.tsx`. data/*.json은 크니 통째로 열지 말고 `head -c`로 본다.
+
 ## 데이터 출처와 규칙
 
 | 용도 | 출처 | 규칙 |
