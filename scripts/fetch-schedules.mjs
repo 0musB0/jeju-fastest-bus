@@ -30,6 +30,8 @@ for (const base of bases) {
   try {
     const html = await get(`/schedule/view/${encodeURIComponent(base)}`);
     const ids = [...new Set([...(html ?? '').matchAll(/id="tab(\d+)"/g)].map((m) => m[1]))];
+    // 탭 이름("(평일)삼화지구-…-하귀"): 평일·휴일 표가 경유 문구(way)는 똑같고 이름에만 요일이 적혀 있다 (320번)
+    const label = (id) => [...((html ?? '').match(new RegExp(`id="tab${id}"[\\s\\S]*?</td>`))?.[0] ?? '').matchAll(/<p[^>]*>([^<]*)<\/p>/g)].map((m) => m[1].trim()).join(' ');
     for (const id of ids) {
       const info = await get(`/data/schedule/getScheduleInfo?scheduleId=${id}`, true);
       const cells = await get(`/data/schedule/getScheduleTableInfo?scheduleId=${id}`, true);
@@ -41,6 +43,7 @@ for (const base of bases) {
         id: Number(id),
         base,
         way: info.SCHEDULE_WAYPOINT ?? '',
+        label: label(id),
         date: (info.ENFORCEMENT_NM ?? '').match(/\d{4}\.\d{1,2}\.\d{1,2}/)?.[0] ?? '',
         cols: grid[0].slice(1),
         rows: grid.slice(1).filter(Boolean).map((r) => r.slice(1)),

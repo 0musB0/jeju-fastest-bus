@@ -14,7 +14,8 @@ import { walkGraph, type Walker } from '@/lib/walk';
 // 실시간: 노선별 버스 위치 → 우리 정류장까지 남은 정류장 수. 우리 데이터로 경로 후보(직행·환승 1번)도 여기서 찾는다.
 // 그 노선의 정류장 목록에 있는 정류장만 받고, 고정된 BusLocation 주소만 부르므로 아무 데나 부르는 프록시가 되지 않는다.
 const stations = stationList as Station[];
-const routes = maskOffShape(routeList as BusRoute[], shapeData as Shapes);
+const stationName = new Map(stations.map((s) => [s.id, s.name]));
+const routes = maskOffShape(routeList as BusRoute[], shapeData as Shapes, (id) => stationName.get(id));
 const routeById = new Map(routes.map((r) => [r.id, r]));
 const timetable = timetableData as Timetable;
 const index = indexData(stations, routes, shapeData as Shapes);

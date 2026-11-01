@@ -1,12 +1,14 @@
-import { MIN_PER_STOP } from './config.ts';
+import { MIN_PER_STOP, SLOW_M } from './config.ts';
 // 시간표: bus.jeju.go.kr의 표(주요 정류장 몇 곳의 시각)를 BIS 노선(ID)별로 바꾸고, 정류장 도착 시각을 계산한다. 외부 호출 없음.
 // 요일: 표 제목("평일", "토·공휴일")과 행 비고("토,공휴일 운행 안함", "…(평일)")로 운행마다 요일을 붙인다. 나머지는 매일 운행으로 봄. 동절기 대체 행은 무시함.
 
 // 노선별: p = [정류장 순번, 기준 정류장부터 걸리는 분, ...], t = 운행마다 기준 정류장 출발 시각(자정부터 분, 24시 넘으면 1440+)
 // m = 운행마다 요일 (1 평일, 2 토요일, 4 일요일·공휴일 비트, 없으면 매일)
-export type Entry = { p: number[]; t: number[]; m?: number[]; n?: number }; // n = 시간표를 만들 때 노선의 정류장 수
+// s = 운행마다 출발 순번 (중간 정류장에서 출발하는 운행만 0보다 큼, 없으면 모두 기점 출발). 그 앞 정류장에는 서지 않는다
+export type Entry = { p: number[]; t: number[]; m?: number[]; s?: number[]; n?: number }; // n = 시간표를 만들 때 노선의 정류장 수
 export type Timetable = Record<string, Entry>;
-export type Tab = { cols: string[]; rows: string[][]; way?: string }; // "노선번호" 열이 있는 표도 있고 없는 표도 있다
+// label = 사이트 탭 이름("(평일)삼화지구-…-하귀"). 요일은 경유 문구(way)가 아니라 여기에 적혀 있는 경우가 많다
+export type Tab = { cols: string[]; rows: string[][]; way?: string; label?: string }; // "노선번호" 열이 있는 표도 있고 없는 표도 있다
 export type Trip = [number, number][] & { m?: number }; // [순번, 시각] 기준점들, m = 요일
 export const EVERY_DAY = 7, WEEKDAY = 1;
 
@@ -101,17 +103,22 @@ export function tripsFor(tab: Tab, stops: string[], no = '', loose = false): Tri
     // (이름이 그대로 맞으면 "세화" 열이 글자로 세화고등학교에 맞아 시각이 있어도 X를 따른다)
     const xStops = (j: number, o: number) => (loose && /경유/.test(tab.cols[j]) ? exact(j, o) && (o > lo || j < firstCol) : xHits(j, o));
     const skipped = endX || viaOther || (!(base && rowNo) && row.some((v, j) => v === 'X' && cand[j]?.some((o) => xStops(j, o))));
-    const m = dayMask(tab.way ?? '', row);
+    const m = dayMask(`${tab.label ?? ''} ${tab.way ?? ''}`, row);
     if (m !== EVERY_DAY) anchors.m = m;
     if (!skipped) trips.push(anchors);
   }
   return trips;
 }
 
-// 순번 → 기준 정류장부터 걸리는 분. 기준점 밖은 양 끝 기울기로 늘린다.
+// 순번 → 기준 정류장부터 걸리는 분. 기준점 밖은 기준점 전체의 평균 속도(정류장당 분)로 늘린다.
+// 끝 구간 기울기로 늘리면 이름을 잘못 맞춘 짧은 구간 하나 때문에 정류장당 5분씩 붙었다 (212번 성산항 +148분, 실제 83분).
+// 단순화: 기준점 밖 정류장 간격이 고르다고 봄
 export function offsetAt(p: number[], ord: number): number {
   const n = p.length / 2;
   if (n === 1) return p[1] + (ord - p[0]) * MIN_PER_STOP;
+  const rate = (p[2 * n - 1] - p[1]) / (p[2 * n - 2] - p[0] || 1);
+  if (ord < p[0]) return p[1] - (p[0] - ord) * rate;
+  if (ord > p[2 * n - 2]) return p[2 * n - 1] + (ord - p[2 * n - 2]) * rate;
   let i = 0;
   while (i < n - 2 && ord > p[2 * (i + 1)]) i++;
   const [o1, m1, o2, m2] = p.slice(2 * i, 2 * i + 4);
@@ -129,13 +136,18 @@ export function buildEntry(trips: Trip[], cum?: number[]): Entry | null {
   const ref = firsts.reduce((a, b) => (count(b) > count(a) ? b : a));
   const offs = new Map<number, number[]>();
   for (const t of trips.filter((t) => t[0][0] === ref)) for (const [o, m] of t) offs.set(o, [...(offs.get(o) ?? []), m - t[0][1]]);
-  const p = [...offs].sort((a, b) => a[0] - b[0]).flatMap(([o, ms]) => [o, median(ms)]);
+  let p = [...offs].sort((a, b) => a[0] - b[0]).flatMap(([o, ms]) => [o, median(ms)]);
   // 이름이 같은 다른 정류장(예: 공항 → 서귀포 중앙로터리 40분)에 맞춘 기준점은 뒤쪽 점을 뺀다.
   // 단순화: 앞쪽 점이 틀린 경우는 못 가린다 (뒤가 줄줄이 빠져 노선 전체가 버려짐)
   for (let k = 2; cum && k < p.length; ) {
     if (cum[p[k]] - cum[p[k - 2]] > 1000 * Math.max(p[k + 1] - p[k - 1], 0.5)) p.splice(k, 2);
     else k += 2;
   }
+  // 양 끝 기준점이 너무 느리면(분당 SLOW_M 미만, 4분 이상) 이름이 같은 다른 곳에 맞춘 것으로 보고 뺀다
+  // (201번 "세화" 열 → 표선 세화2리사무소, 212번 "고성" 열 → 고성리 장만이동산). 빠진 쪽은 offsetAt이 평균 속도로 채운다
+  const slow = (a: number, b: number) => cum && p[b + 1] - p[a + 1] >= 4 && cum[p[b]] - cum[p[a]] < SLOW_M * (p[b + 1] - p[a + 1]);
+  while (p.length > 4 && slow(0, 2)) p.splice(0, 2), (p = p.map((v, i) => (i % 2 ? v - p[1] : v)));
+  while (p.length > 4 && slow(p.length - 4, p.length - 2)) p.splice(-2, 2);
   // 이름을 잘못 맞춘 노선 거르기: 소요가 거꾸로 가거나 정류장당 0.5~6분(도심급행은 정류장이 드물어 4분을 넘음)을 벗어나면 버린다
   const n = p.length / 2, mins = p[2 * n - 1] - p[1], rate = mins / (p[2 * n - 2] - p[0] || 1);
   // 거리를 알면 평균 속도로(분당 100m~1km), 모르면 정류장당 0.5~6분. 정류장이 드문 급행(102번: 15정류장 55km 2시간)은 정류장당 8분이 넘는다
@@ -143,18 +155,27 @@ export function buildEntry(trips: Trip[], cum?: number[]): Entry | null {
   const ok = cum ? fit >= 100 && fit <= 1000 && rate >= 0.5 : rate >= 0.5 && rate <= 6;
   if (n < 2 || !ok || p.some((v, i) => i % 2 === 1 && i > 1 && v < p[i - 2])) return null;
   // 같은 시각 운행은 요일을 합친다
-  const byTime = new Map<number, number>();
-  for (const tr of trips) { const k = Math.round(tr[0][1] - offsetAt(p, tr[0][0])); byTime.set(k, (byTime.get(k) ?? 0) | (tr.m ?? EVERY_DAY)); }
-  const t = [...byTime.keys()].sort((a, b) => a - b), m = t.map((k) => byTime.get(k)!);
-  return m.every((x) => x === EVERY_DAY) ? { p, t } : { p, t, m };
+  // 기준 순번보다 뒤에서 시작하는 운행(표의 "노형성당 출발")은 출발 순번을 남긴다. 같은 시각이면 더 앞에서 출발하는 쪽
+  const byTime = new Map<number, number>(), from = new Map<number, number>();
+  for (const tr of trips) {
+    const k = Math.round(tr[0][1] - offsetAt(p, tr[0][0]));
+    byTime.set(k, (byTime.get(k) ?? 0) | (tr.m ?? EVERY_DAY));
+    from.set(k, Math.min(from.get(k) ?? Infinity, tr[0][0] > ref ? tr[0][0] : 0));
+  }
+  const t = [...byTime.keys()].sort((a, b) => a - b), m = t.map((k) => byTime.get(k)!), s = t.map((k) => from.get(k)!);
+  return { p, t, ...(m.some((x) => x !== EVERY_DAY) && { m }), ...(s.some((x) => x > 0) && { s }) };
+}
+
+// 이 정류장(ord)을 지나는 운행의 기점 시각들 (요일 day). 중간에서 출발하는 운행은 그 앞 정류장에서 빼다
+export function departures(e: Entry, ord: number, day = EVERY_DAY): number[] {
+  return e.t.filter((_, i) => ((e.m?.[i] ?? EVERY_DAY) & day) !== 0 && (e.s?.[i] ?? 0) <= ord);
 }
 
 // 지금(자정부터 분, KST)부터 horizon분 안에 이 정류장에 오는 버스들: 지금부터 몇 분 뒤인지
 // day = 오늘 요일 비트. 단순화: 어제 출발해 자정을 넘긴 운행과 내일 운행도 오늘 요일로 거름.
 export function arrivals(e: Entry, ord: number, nowMin: number, horizon = 180, day = EVERY_DAY): number[] {
   const off = offsetAt(e.p, ord);
-  return e.t
-    .filter((_, i) => ((e.m?.[i] ?? EVERY_DAY) & day) !== 0)
+  return departures(e, ord, day)
     .flatMap((t) => [t - 1440, t, t + 1440].map((d) => d + off - nowMin))
     .filter((m) => m >= 0 && m <= horizon)
     .sort((a, b) => a - b);
@@ -162,7 +183,7 @@ export function arrivals(e: Entry, ord: number, nowMin: number, horizon = 180, d
 
 // 이 정류장 첫차 시각 (자정부터 분)
 export function firstAt(e: Entry, ord: number, day = EVERY_DAY): number | undefined {
-  const ts = e.t.filter((_, i) => ((e.m?.[i] ?? EVERY_DAY) & day) !== 0);
+  const ts = departures(e, ord, day);
   return ts.length ? ((Math.round(Math.min(...ts) + offsetAt(e.p, ord)) % 1440) + 1440) % 1440 : undefined;
 }
 
