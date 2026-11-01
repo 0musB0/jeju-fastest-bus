@@ -57,3 +57,12 @@ test('지도 선: 노선 모양이 있으면 정류장 사이 도로 좌표 조�
   assert.equal(legPath(indexData(st4, [r], shapes), r, 0, 1).length, 3);
   assert.equal(legPath(indexData(st4, [r]), r, 0, 1).length, 2);
 });
+
+test('같은 번호의 다른 운행 계통도 한 구간에 함께 붙인다 (하나가 안 다녀도 다른 계통으로)', () => {
+  const routes = [
+    { id: '1', no: '100-1', to: '', stops: ['A', 'B', 'C'] },
+    { id: '2', no: '100-2', to: '', stops: ['Q', 'A', 'B', 'C', 'R'] },
+  ];
+  const r = findTrips({ lat: 33.5, lng: 126.5 }, { lat: 33.5202, lng: 126.5 }, indexData(stations, routes));
+  assert.deepEqual(r[0].legs[0].routeIds.sort(), ['1', '2']);
+});
