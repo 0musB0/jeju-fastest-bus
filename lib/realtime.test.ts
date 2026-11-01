@@ -64,3 +64,13 @@ test('배차 간격: 노선 길이 × 정류장당 소요 ÷ 버스 수, 환승 
   const r = applyRealtime(transfer, { '405136501:405000153': [1] }, { '405150001': 20, '405150002': 20 });
   assert.equal(r.candidate.legs[1].intervalMin, 10); // 두 노선 합쳐 10분 간격
 });
+
+test('ODsay 구간의 노선이 그 정류장들에 안 서면 경로를 뺀다', async () => {
+  const { onOurRoutes, stopKeys } = await import('./realtime.ts');
+  const ride = { busNos: ['302', '301'], routeIds: ['405130201', '405130101'], stationId: 'A', endStationId: 'B', from: '', to: '', stops: 3 };
+  const route = { candidate: { legs: [{ walkBeforeMin: 1, rideMin: 5 }], walkAfterMin: 1 }, rides: [ride], fare: 0, odsayMin: 7 };
+  assert.deepEqual(stopKeys([route]), ['405130201:A:B', '405130101:A:B']);
+  assert.equal(onOurRoutes(route, { '405130201:A:B': false, '405130101:A:B': true }), true); // 하나라도 서면 남김
+  assert.equal(onOurRoutes(route, { '405130201:A:B': false, '405130101:A:B': false }), false);
+  assert.equal(onOurRoutes(route, {}), true); // 확인 못 한 건 남김
+});

@@ -119,5 +119,14 @@ export async function GET(req: Request) {
   }
   // lite = 30초 자동 갱신: 지도 선은 처음 받은 것을 화면이 그대로 쓴다
   const out = p.get('lite') ? trips.map((t) => ({ ...t, legs: t.legs.map((l) => ({ ...l, path: [] })) })) : trips;
-  return Response.json({ results, headways, scheduled, pending, firstBus, trips: out, paths });
+  // ODsay 구간 확인: 그 노선이 탈 정류장 다음에 내릴 정류장에 서는지 (우리 데이터만 봄)
+  const stopsOk: Record<string, boolean> = {};
+  for (const k of (p.get('stops') ?? '').split(',').slice(0, MAX_PAIRS)) {
+    const [r, a, b] = k.split(':');
+    const route = ID.test(r ?? '') ? routeById.get(r) : undefined;
+    if (!route || !a || !b) continue;
+    const i = route.stops.indexOf(a);
+    stopsOk[k] = i >= 0 && route.stops.indexOf(b, i + 1) > i;
+  }
+  return Response.json({ results, headways, scheduled, pending, firstBus, trips: out, paths, stopsOk });
 }

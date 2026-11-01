@@ -43,6 +43,13 @@ export type Headways = Record<string, number>;
 export type Schedules = { scheduled?: Record<string, number[]>; pending?: Record<string, number[]>; firstBus?: Record<string, number> };
 
 // 서버에 보낼 "노선:정류장" 쌍. first = 첫 버스(실시간 대상), 아니면 환승 버스(시간표만 씀).
+// ODsay 구간 → "노선:탈 정류장:내릴 정류장". 서버가 우리 노선 데이터에서 그 노선이 두 정류장에 차례로 서는지 확인한다.
+export const stopKeys = (routes: Route[]) => [...new Set(routes.flatMap((r) => r.rides.flatMap((x) => x.endStationId ? x.routeIds.filter(Boolean).map((id) => `${id}:${x.stationId}:${x.endStationId}`) : [])))];
+// 확인 결과로 거른다: 구간의 노선이 하나도 그 정류장들에 안 서면 그 경로를 뺀다 (ODsay 자료에는 급행이 그냥 지나가는 정류장에서 타고 내리는 경로가 있음)
+export const onOurRoutes = (r: Route, ok: Record<string, boolean>) => r.rides.every((x) => {
+  const ks = x.endStationId ? x.routeIds.filter(Boolean).map((id) => `${id}:${x.stationId}:${x.endStationId}`) : [];
+  return !ks.length || ks.some((k) => ok[k] !== false);
+});
 export function rideKeys(routes: Route[], first: boolean): string[] {
   const keyOf = (ride: Route['rides'][number]) => ride.routeIds.filter(Boolean).map((id) => `${id}:${ride.stationId}`);
   return [...new Set(routes.flatMap((r) => (first ? [r.rides[0]] : r.rides.slice(1)).flatMap(keyOf)))];
