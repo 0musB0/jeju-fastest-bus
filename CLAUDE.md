@@ -27,6 +27,8 @@ app/layout.tsx        폰트(Jua)·메타·상단 메뉴·하단 링크. icon.sv
 app/ads.txt/route.ts  애드센스 ads.txt (게시자 ID 없으면 404)
 app/privacy/page.tsx  개인정보처리방침 (애드센스 요건)
 app/about, terms, contact  소개·이용 방법, 이용약관, 문의(이메일) 정적 페이지
+app/routes/page.tsx   모든 노선 번호 목록 (상단 메뉴 "노선")
+app/routes/[base]     번호별 가지 노선: 정류장 순서·요일별 출발 시각(빌드 때 data로)
 app/guide/page.tsx    버스 안내 글 목록
 app/guide/[slug]      안내 글 본문(요금·종류·타는 법) + 공항→관광지 직행 표(빌드 때 data로 계산)
 app/sitemap.ts, robots.ts  검색엔진용

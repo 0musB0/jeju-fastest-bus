@@ -102,3 +102,9 @@ button.fav.on { color: var(--accent); }
 .favchip { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); overflow: hidden; }
 .favchip button { border: 0; border-radius: 0; background: none; padding: 6px 10px; min-height: 44px; }
 .favchip button.x { color: var(--muted); padding: 6px 8px 6px 2px; min-width: 44px; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chips .chip { text-decoration: none; font-size: 18px; }
+details.box summary { cursor: pointer; }
+.times { font-variant-numeric: tabular-nums; word-spacing: 4px; color: var(--ink); }
+.stops { padding-left: 24px; margin: 8px 0 0; }
+.stops li { margin-bottom: 2px; }
