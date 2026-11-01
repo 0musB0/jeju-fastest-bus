@@ -9,9 +9,9 @@ import { RouteLine } from '@/app/RouteMap';
 
 // 노선 번호 하나의 모든 가지 노선: 정류장 순서와 시간표. 빌드할 때 정적 페이지로 만든다.
 const nameOf = new Map(stationList.map((s) => [s.id, s.name.replace('(가상정류소)', '')]));
-const rawName = new Map(stationList.map((s) => [s.id, s.name]));
+const rawName = new Map(stationList.map((s) => [s.id, s.name])), stationById = new Map(stationList.map((s) => [s.id, s]));
 const ptOf = new Map(stationList.map((s) => [s.id, { lat: s.lat, lng: s.lng }]));
-const routes = maskOffShape((routeList as BusRoute[]).filter((r) => r.stops.length > 1), shapes as Shapes, (id) => rawName.get(id));
+const routes = maskOffShape((routeList as BusRoute[]).filter((r) => r.stops.length > 1), shapes as Shapes, (id) => rawName.get(id), (id) => stationById.get(id));
 const shp = shapes as Shapes;
 const tt = timetable as Timetable;
 const sub = (no: string) => Number(no.split('-')[1] ?? 0);

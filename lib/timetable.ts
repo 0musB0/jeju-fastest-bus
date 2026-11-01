@@ -155,6 +155,11 @@ export function buildEntry(trips: Trip[], cum?: number[]): Entry | null {
   const fit = cum ? (cum[p[2 * n - 2]] - cum[p[0]]) / (mins || 1) : 0;
   const ok = cum ? fit >= 100 && fit <= 1000 && rate >= 0.5 : rate >= 0.5 && rate <= 6;
   if (n < 2 || !ok || p.some((v, i) => i % 2 === 1 && i > 1 && v < p[i - 2])) return null;
+  // 기준점이 노선 끝까지 안 닿으면(201-18: 성산까지만 맞고 제주터미널까지 92정류장 남음) 남은 거리를 평균 속도로 채운 점을 더한다.
+  // 정류장 수로 늘리면 촘촘한 시내 구간·드문 일주 구간이 섞여 크게 틀렸다 (성산 → 김녕 29분, 실제 약 45분)
+  const end = cum ? cum.length - 1 : 0;
+  if (cum && p[2 * n - 2] < end) p.push(end, Math.round((p[2 * n - 1] + (cum[end] - cum[p[2 * n - 2]]) / fit) * 10) / 10);
+  if (cum && p[0] > 0) p.unshift(0, Math.round((p[1] - (cum[p[0]] - cum[0]) / fit) * 10) / 10);
   // 같은 시각 운행은 요일을 합친다
   // 기준 순번보다 뒤에서 시작하는 운행(표의 "노형성당 출발")은 출발 순번을 남긴다. 같은 시각이면 더 앞에서 출발하는 쪽
   const byTime = new Map<number, number>(), from = new Map<number, number>();

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { findTrips, indexData, distM, legPath } from './direct.ts';
+import { findTrips, indexData, distM, legPath, maskOffShape } from './direct.ts';
 
 // 위도 0.001도 ≈ 111m
 const st = (id: string, lat: number) => ({ id, name: id, lat, lng: 126.5 });
@@ -104,4 +104,12 @@ test('노선 모양이 지나지 않는 정류장이 5개 이상 끼어 있으�
   const sh = { '1': { p: [], s: [0, 5, -1, -1] } };
   assert.deepEqual(maskOffShape([t], sh, (id) => names[id])[0].stops, ['A', 'C', '', '']);
   assert.deepEqual(maskOffShape([{ ...t, to: '김녕' }], sh, (id) => names[id])[0].stops, t.stops);
+});
+
+test('끝에서 모양을 벗어나며 5km 넘게 건너뛰는 꼬리는 지운다 (900-2 김녕 → 한라수목원)', () => {
+  const r = { id: '1', no: '900-2', to: '김녕', stops: ['A', 'B', 'C', 'D'] };
+  const pos: Record<string, { lat: number; lng: number }> = { A: { lat: 33.5, lng: 126.7 }, B: { lat: 33.5, lng: 126.71 }, C: { lat: 33.5, lng: 126.5 }, D: { lat: 33.5, lng: 126.49 } };
+  assert.deepEqual(maskOffShape([r], { '1': { p: [], s: [0, 5, -1, -1] } }, undefined, (id: string) => pos[id])[0].stops, ['A', 'B', '', '']);
+  pos.C = { lat: 33.5, lng: 126.72 }; // 1km면 모양이 덜 그려졌을 수 있어 그대로
+  assert.deepEqual(maskOffShape([r], { '1': { p: [], s: [0, 5, -1, -1] } }, undefined, (id: string) => pos[id])[0].stops, r.stops);
 });

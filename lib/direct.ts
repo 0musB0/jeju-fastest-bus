@@ -18,7 +18,7 @@ export type RideMin = (route: BusRoute, i: number, j: number) => number;
 // 정류장이 5개 이상 이어지고 그 뒤에 모양이 다시 이어지면, 그 정류장들을 빈칸('')으로 바꾼다. 순번(시간표·모양의 기준)은 그대로 둔다.
 // 종점: 모양을 벗어나기 직전 정류장 이름이 노선의 종점(to)과 같으면 2개 이상 벗어날 때 그 뒤를 끝까지 지운다 (900-1: 조천리 종점 뒤 국제여객선터미널까지).
 // 단순화: 모양이 없는 노선과 종점 이름이 안 맞는 끝부분(모양이 덜 그려졌을 수 있음)은 그대로 둔다.
-export function maskOffShape(routes: BusRoute[], shapes: Shapes, nameOf?: (id: string) => string | undefined): BusRoute[] {
+export function maskOffShape(routes: BusRoute[], shapes: Shapes, nameOf?: (id: string) => string | undefined, posOf?: (id: string) => Pt | undefined): BusRoute[] {
   return routes.map((r) => {
     const s = shapes[r.id]?.s;
     if (!s || s.length !== r.stops.length) return r;
@@ -27,7 +27,10 @@ export function maskOffShape(routes: BusRoute[], shapes: Shapes, nameOf?: (id: s
       if (s[k] !== -1) { k++; continue; }
       let e = k;
       while (e < s.length && s[e] === -1) e++;
-      const tail = e - k >= 2 && nameOf?.(r.stops[k - 1]) === r.to; // 종점 다음부터 끝까지 (520-6: 등기소 종점 뒤 법환…중앙로터리)
+      // 끝에서 모양을 벗어나며 5km 넘게 건너뛰는 꼬리 (900-2: 김녕해수욕장 → 제주고등학교 → 한라수목원, 김녕에서 3분으로 계산됨)
+      const a = posOf?.(r.stops[k - 1]), b = posOf?.(r.stops[k]);
+      const jump = e === s.length && !!a && !!b && distM(a, b) > 5000;
+      const tail = jump || (e - k >= 2 && nameOf?.(r.stops[k - 1]) === r.to); // 종점 다음부터 끝까지 (520-6: 등기소 종점 뒤 법환…중앙로터리)
       // 가운데를 지운 뒤 남은 끝 정류장들이 모두 앞에서 이미 지난 곳이면 같이 지운다 (212-51: 성산항(종점) … 꼬리 … 성산항입구, 성산항)
       const loopBack = e < s.length && r.stops.slice(e).every((id) => r.stops.slice(0, k).includes(id));
       if (tail || (e - k >= 5 && e < s.length && s[e] >= s[k - 1])) stops = stops.map((id, n) => (n >= k && (n < e || loopBack || tail) ? '' : id));
