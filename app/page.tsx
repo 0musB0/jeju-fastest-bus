@@ -237,13 +237,16 @@ export default function Home() {
         .sort((a, b) => (a.eta ? 0 : 1) - (b.eta ? 0 : 1) || (a.eta?.min ?? a.odsayMin) - (b.eta?.min ?? b.odsayMin));
       // 오늘 운행이 끝나 내일 첫차를 타야 하는 경로는 보여주지 않는다 (첫차 전 새벽은 오늘 안이라 그대로 둠)
       const nowMin = kstMinutes(new Date());
-      const ended = (r: (typeof ranked)[number]) => !r.eta && r.firstBus !== undefined && r.firstBus <= nowMin;
+      // 환승 버스도 시간표는 있는데 오늘 남은 차가 없으면(서버가 첫차 시각만 줌) 끝난 것으로 본다
+      const transferEnded = (r: Route) => r.candidate.legs.some((l, i) => i > 0 && !l.timetableMin && !l.nextBusesMin && !l.intervalMin
+        && r.rides[i].routeIds.some((id) => sched.firstBus?.[`${id}:${r.rides[i].stationId}`] !== undefined));
+      const ended = (r: (typeof ranked)[number]) => !r.eta && ((r.firstBus !== undefined && r.firstBus <= nowMin) || transferEnded(r));
       const shown = ranked.filter((r) => !ended(r));
       if (!shown.some((r) => r.eta) && ranked.some(ended)) {
         setRoutes([]);
         setAt(null);
-        const first = Math.min(...ranked.filter(ended).map((r) => r.firstBus!));
-        return setMsg(`막차가 끝났어요. 내일 첫차는 ${clock12(first)}부터예요.`);
+        const firsts = ranked.filter(ended).flatMap((r) => (r.firstBus !== undefined ? [r.firstBus] : []));
+        return setMsg(`막차가 끝났어요.${firsts.length ? ` 내일 첫차는 ${clock12(Math.min(...firsts))}부터예요.` : ''}`);
       }
       setRoutes(shown.slice(0, 3));
       if (!refresh) setSelKey('');
