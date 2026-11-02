@@ -460,10 +460,10 @@ export default function Home() {
                 const riding = held && key === pin && j === 0;
                 const ended = j > 0 && !r.eta && !l.timetableMin && !l.intervalMin;
                 const time = riding ? <span className="when live">탄 버스</span>
-                  // 환승 버스는 "지금부터 N분"이 헷갈려서(정류장에 닿은 뒤부터로 읽힘) 시각으로 보여준다
-                  : b ? (b.how === 'realtime' ? <span className="when live">{j ? `${kstClock(at!, b.at)} 도착` : `${Math.max(0, Math.round(b.at))}분 뒤 도착`}<small>실시간</small></span>
-                    : b.how === 'interval' ? <span className="when">약 {Math.round(b.at)}분 뒤 도착<small>배차 어림</small></span>
-                    : <span className="when">{b.at > 60 || j ? `${kstClock(at!, b.at)} 도착` : `${Math.round(b.at)}분 뒤 도착`}<small>시간표</small></span>)
+                  // 모두 "지금부터" 몇 분 뒤 (사용자 요청 2026-11-02: 시각 대신 "N시간 M분 뒤 도착")
+                  : b ? (b.how === 'realtime' ? <span className="when live">{dur(Math.max(0, b.at))} 뒤 도착<small>실시간</small></span>
+                    : b.how === 'interval' ? <span className="when">약 {dur(b.at)} 뒤 도착<small>배차 어림</small></span>
+                    : <span className="when">{dur(b.at)} 뒤 도착<small>시간표</small></span>)
                   : j === 0 && r.firstBus !== undefined ? <span className="when off">{r.firstBus > kstMinutes(at!) ? '첫차 전' : '운행 끝'}<small>첫차 {clock12(r.firstBus)}</small></span>
                   : <span className="when off">{ended ? '막차 지났을 수 있음' : j === 0 && r.noBusNow ? '운행 버스 없음' : '정보 없음'}</span>;
                 return (
