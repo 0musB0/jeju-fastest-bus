@@ -66,7 +66,7 @@ export async function GET(req: Request) {
   const tripFirst = trips.flatMap((t) => t.legs[0].routeIds.map((r) => [r, t.legs[0].fromId]));
   const tripLater = trips.flatMap((t) => t.legs.slice(1).flatMap((l) => l.routeIds.map((r) => [r, l.fromId])));
 
-  // 실시간 10칸: ODsay 첫 버스, 우리 후보의 구간들(순위 순, 환승 버스 포함), ODsay 환승 버스 순.
+  // 실시간 10칸: ODsay 첫 버스, 우리 후보의 첫 구간, 우리 후보의 환승 구간, ODsay 환승 버스 순.
   // 한 정류장에 같은 번호의 가지 노선이 여럿 서면(201-12·201-14·201-20, 212-2·212-4) 버스 위치는 가지 노선마다 따로 온다.
   // 그래서 구간마다 60분 안에 올 가지 노선을 3개까지 차례로 넣는다. 같은 구간은 한 번만.
   // 한 구간의 노선은 시간표상 곧 오는 것부터 조회한다. 예전에는 목록 첫 노선만 봐서 밤에만 다니는 201-18을 아침에 조회하고,
@@ -82,7 +82,10 @@ export async function GET(req: Request) {
   const grouped = (ps: string[][]) => [...Map.groupBy(ps, ([r, st]) => `${st}:${routeById.get(r)?.no.split('-')[0]}`).values()]
     .flatMap((g) => legIds(g.map(([r]) => r), g[0][1]));
   const routeIds: string[] = [];
-  for (const r of [...grouped(pairs), ...trips.flatMap((t) => t.legs.flatMap((l) => legIds(l.routeIds, l.fromId))), ...grouped(laterPairs)]) {
+  // 첫 버스가 먼저: 우리 후보의 첫 구간 전부 → 환승 구간 순 (환승 구간을 순위대로 넣으면 3위 후보의 첫 버스가 10칸에서 밀렸다)
+  const firstIds = trips.flatMap((t) => legIds(t.legs[0].routeIds, t.legs[0].fromId));
+  const laterIds = trips.flatMap((t) => t.legs.slice(1).flatMap((l) => legIds(l.routeIds, l.fromId)));
+  for (const r of [...grouped(pairs), ...firstIds, ...laterIds, ...grouped(laterPairs)]) {
     if (routeIds.length < MAX_ROUTES && !routeIds.includes(r)) routeIds.push(r);
   }
   const allPairs = [...pairs, ...tripFirst, ...laterPairs, ...tripLater].filter(([r]) => routeIds.includes(r));
