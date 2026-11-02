@@ -83,7 +83,8 @@ function PlacePicker({ label, value, onPick, allowHere, favorites }: { label: st
   // 출발지 기본값은 현재 위치: 처음 한 번 자동으로 묻는다.
   const asked = useRef(false);
   useEffect(() => {
-    if (allowHere && !asked.current && !loadTrip()?.from) { asked.current = true; here(); }
+    // 따라가는 경로가 저장돼 있으면 묻지 않는다: 새 위치로 다시 찾으면 고른 경로가 풀림
+    if (allowHere && !asked.current && !loadTrip()?.from && !loadPinned()) { asked.current = true; here(); }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   function here() {
