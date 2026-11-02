@@ -66,7 +66,9 @@ export async function GET(req: Request) {
   const tripFirst = trips.flatMap((t) => t.legs[0].routeIds.map((r) => [r, t.legs[0].fromId]));
   const tripLater = trips.flatMap((t) => t.legs.slice(1).flatMap((l) => l.routeIds.map((r) => [r, l.fromId])));
 
-  // 실시간 10칸: ODsay 첫 버스, 우리 후보의 구간들(순위 순, 환승 버스 포함), ODsay 환승 버스 순. 한 구간에 노선이 여럿이라 돌아가며 하나씩 고른다.
+  // 실시간 10칸: ODsay 첫 버스, 우리 후보의 구간들(순위 순, 환승 버스 포함), ODsay 환승 버스 순.
+  // 한 정류장에 같은 번호의 가지 노선이 여럿 서면(201-12·201-14·201-20, 212-2·212-4) 버스 위치는 가지 노선마다 따로 온다.
+  // 그래서 구간마다 60분 안에 올 가지 노선을 3개까지 차례로 넣는다. 같은 구간은 한 번만.
   // 한 구간의 노선은 시간표상 곧 오는 것부터 조회한다. 예전에는 목록 첫 노선만 봐서 밤에만 다니는 201-18을 아침에 조회하고,
   // 2정류장 앞에 와 있던 201-12 버스를 놓쳤다 (온평초, 2026-11-02). 시간표가 없는 노선은 중간 순서.
   const date = new Date(), now = kstMinutes(date), today = kstDay(date);
@@ -75,10 +77,13 @@ export async function GET(req: Request) {
     return e && ord >= 0 ? (arrivals(e, ord, now, 180, today)[0] ?? 9999) : 500;
   };
   const bySoon = (ids: string[], s: string) => [...ids].sort((a, b) => soon(a, s) - soon(b, s));
-  const lists = [...pairs.map(([r]) => [r]), ...trips.flatMap((t) => t.legs.map((l) => bySoon(l.routeIds, l.fromId))), ...laterPairs.map(([r]) => [r])];
+  // ODsay 경로도 같은 정류장의 가지 노선들이 따로 들어오므로 정류장·번호로 묶어 같은 규칙을 쓴다
+  const legIds = (ids: string[], s: string) => bySoon(ids, s).filter((r, i) => i === 0 || soon(r, s) <= 60).slice(0, 3);
+  const grouped = (ps: string[][]) => [...Map.groupBy(ps, ([r, st]) => `${st}:${routeById.get(r)?.no.split('-')[0]}`).values()]
+    .flatMap((g) => legIds(g.map(([r]) => r), g[0][1]));
   const routeIds: string[] = [];
-  for (let k = 0; routeIds.length < MAX_ROUTES && lists.some((l) => l.length > k); k++) {
-    for (const l of lists) if (l[k] && !routeIds.includes(l[k]) && routeIds.length < MAX_ROUTES) routeIds.push(l[k]);
+  for (const r of [...grouped(pairs), ...trips.flatMap((t) => t.legs.flatMap((l) => legIds(l.routeIds, l.fromId))), ...grouped(laterPairs)]) {
+    if (routeIds.length < MAX_ROUTES && !routeIds.includes(r)) routeIds.push(r);
   }
   const allPairs = [...pairs, ...tripFirst, ...laterPairs, ...tripLater].filter(([r]) => routeIds.includes(r));
   // 제주 서버는 동시에 여러 개를 보내면 전부 3초를 넘긴다(실측). 2개씩 나눠 보낸다.
