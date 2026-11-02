@@ -113,3 +113,13 @@ test('끝에서 모양을 벗어나며 5km 넘게 건너뛰는 꼬리는 지운�
   pos.C = { lat: 33.5, lng: 126.72 }; // 1km면 모양이 덜 그려졌을 수 있어 그대로
   assert.deepEqual(maskOffShape([r], { '1': { p: [], s: [0, 5, -1, -1] } }, undefined, (id: string) => pos[id])[0].stops, r.stops);
 });
+
+test('탑승 시간이 많이 다른 같은 번호 노선은 따로 후보로 (밤 201-18 87분 vs 낮 201-12 113분)', () => {
+  const routes = [
+    { id: '1', no: '201-18', to: '', stops: ['A', 'B', 'C'] },
+    { id: '2', no: '201-12', to: '', stops: ['A', 'B', 'C'] },
+  ];
+  const ride = (r: { id: string }) => (r.id === '1' ? 87 : 113);
+  const r = findTrips({ lat: 33.5, lng: 126.5 }, { lat: 33.5202, lng: 126.5 }, indexData(stations, routes), ride);
+  assert.deepEqual(r.map((t) => [t.legs[0].routeIds, t.legs[0].rideMin]), [[['1'], 87], [['2'], 113]]);
+});
