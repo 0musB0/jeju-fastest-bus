@@ -60,7 +60,8 @@ export async function GET(req: Request) {
   // q = ODsay 경로의 첫 버스, later = 환승 버스 (환승 버스는 시간표만 쓰므로 실시간 조회는 안 함)
   const parse = (v: string | null) => (v ?? '').split(',').map((x) => x.split(':'))
     .filter(([r, s]) => ID.test(r ?? '') && !!routeById.get(r)?.stops.includes(s)).slice(0, MAX_PAIRS);
-  const pairs = parse(p.get('q')), laterPairs = parse(p.get('later'));
+  // pin = 화면에서 따라가는 경로의 구간들: 실시간 10칸에 가장 먼저 넣는다 (타고 가는 중에도 환승 버스를 실시간으로)
+  const pairs = parse(p.get('q')), laterPairs = parse(p.get('later')), pinPairs = parse(p.get('pin'));
   const from = point(p.get('from')), to = point(p.get('to'));
   const trips = from && to ? findTrips(from, to, index, rideMin, 20, walker) : [];
   const tripFirst = trips.flatMap((t) => t.legs[0].routeIds.map((r) => [r, t.legs[0].fromId]));
@@ -85,10 +86,10 @@ export async function GET(req: Request) {
   // 첫 버스가 먼저: 우리 후보의 첫 구간 전부 → 환승 구간 순 (환승 구간을 순위대로 넣으면 3위 후보의 첫 버스가 10칸에서 밀렸다)
   const firstIds = trips.flatMap((t) => legIds(t.legs[0].routeIds, t.legs[0].fromId));
   const laterIds = trips.flatMap((t) => t.legs.slice(1).flatMap((l) => legIds(l.routeIds, l.fromId)));
-  for (const r of [...grouped(pairs), ...firstIds, ...laterIds, ...grouped(laterPairs)]) {
+  for (const r of [...grouped(pinPairs), ...grouped(pairs), ...firstIds, ...laterIds, ...grouped(laterPairs)]) {
     if (routeIds.length < MAX_ROUTES && !routeIds.includes(r)) routeIds.push(r);
   }
-  const allPairs = [...pairs, ...tripFirst, ...laterPairs, ...tripLater].filter(([r]) => routeIds.includes(r));
+  const allPairs = [...pinPairs, ...pairs, ...tripFirst, ...laterPairs, ...tripLater].filter(([r]) => routeIds.includes(r));
   // 제주 서버는 동시에 여러 개를 보내면 전부 3초를 넘긴다(실측). 2개씩 나눠 보낸다.
   const locs = new Map<string, Awaited<ReturnType<typeof busLocation>>>();
   for (let i = 0; i < routeIds.length; i += CONCURRENCY) {
@@ -113,7 +114,7 @@ export async function GET(req: Request) {
   const nextDay = now >= 720 ? kstDay(date, 1) : today; // 막차 뒤 첫차는 오후면 내일 요일로
   const scheduled: Record<string, number[]> = {}, firstBus: Record<string, number> = {};
   const pending: Record<string, number[]> = {}; // 시간표 버스 중 아직 기점을 떠나지 않은 것 (실시간 위치에 안 보이는 버스)
-  for (const [r, s] of [...pairs, ...laterPairs, ...tripFirst, ...tripLater]) {
+  for (const [r, s] of [...pinPairs, ...pairs, ...laterPairs, ...tripFirst, ...tripLater]) {
     const e = tableOf(routeById.get(r)), ord = routeById.get(r)?.stops.indexOf(s) ?? -1;
     if (!e || ord < 0) continue;
     // 낮에 3시간 넘게 비는 노선도 많다(시골·관광지). 3시간 안에 없다고 "운행 끝"으로 보지 않는다.

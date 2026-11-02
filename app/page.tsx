@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { arrivalMin, kstClock12 as kstClock } from '@/lib/eta';
 import { kstMinutes } from '@/lib/timetable';
+import { BOARD_MARGIN_MIN } from '@/lib/config';
 import { parseOdsay, type Pt, type Route } from '@/lib/odsay';
 import { applyRealtime, tripsToRoutes, sameRide, rideKeys, stopKeys, onOurRoutes, withOurWalks, type Headways, type PlanResults, type Schedules } from '@/lib/realtime';
 import type { Trip } from '@/lib/direct';
@@ -26,6 +27,20 @@ const loadPinned = (): Pinned | null => {
     return p?.r?.eta && Date.now() < p.t + (p.r.eta.min + 30) * 60000 ? p : null;
   } catch { return null; }
 };
+// 탄 버스 안: 첫 버스는 이미 탔다고 보고(남은 탑승 시간만), 환승 버스는 새 실시간·시간표로 다시 계산한다.
+// 다시 계산할 수 없으면 고정한 시각을 그대로 쓴다 (지난 시간만큼 남은 분을 줄임)
+function riding(f: { r: Ranked; t: number }, results: PlanResults, headways: Headways, sched: Schedules): Ranked {
+  const now = Date.now() / 60000, gone = now - f.t / 60000, b0 = f.r.eta!.boards[0], leg0 = f.r.candidate.legs[0];
+  const fixed = { ...f.r, eta: { ...f.r.eta!, min: Math.max(0, f.r.eta!.min - gone) } };
+  if (f.r.rides.length < 2) return fixed;
+  const bare = { ...f.r, candidate: { ...f.r.candidate, legs: f.r.candidate.legs.map((l) => ({ walkBeforeMin: l.walkBeforeMin, rideMin: l.rideMin })) } };
+  const re = applyRealtime(bare, results, headways, sched);
+  // 단순화: 탄 버스는 시간표 탑승 시간대로 간다고 봄. walkBeforeMin을 -여유로 둬서 "지금(0분) 타는 버스"가 되게 함
+  const rest = Math.max(0, f.t / 60000 + b0.at + leg0.rideMin - now);
+  re.candidate.legs[0] = { walkBeforeMin: -BOARD_MARGIN_MIN, nextBusesMin: [0], rideMin: rest };
+  const eta = arrivalMin(re.candidate);
+  return eta ? { ...re, eta } : fixed;
+}
 // 도착 칸 안내 문구: 제주말, 페이지를 열 때마다 바뀐다
 const ASKS = ['어디 감수꽈?', '어드레 가카마씸?', '오늘은 어드레 감서?'];
 // 버스 번호만: "300(신사동)", "365-21" → "300", "365" (같은 번호는 하나로)
@@ -180,6 +195,11 @@ export default function Home() {
   const pathsRef = useRef(new Map<string, Trip['legs'][number]['path']>()); // 우리 경로의 지도 선: 처음 받은 것을 갱신 때도 쓴다
 
   // 출발·도착이 바뀌면 ODsay로 경로 후보를 받고, 30초마다 실시간·시간표만 다시 계산한다.
+  // 따라가는 경로의 구간 키: 타기 전이면 모든 구간, 탄 뒤면 환승 구간만 (서버가 실시간을 먼저 조회)
+  function pinKeys(): string[] {
+    const r = frozenRef.current?.r ?? routesRef.current.find((x) => routeKey(x) === pinRef.current);
+    return r && pinRef.current ? [...(heldRef.current ? [] : rideKeys([r], true)), ...rideKeys([r], false)].slice(0, 12) : [];
+  }
   async function plan(refresh = false) {
     if (refresh && !live.current) return;
     const id = refresh ? reqId.current : ++reqId.current;
@@ -220,7 +240,7 @@ export default function Home() {
       let walkAll: number | null = null;
       try {
         const pathKey = (x: Route['rides'][number]) => `${x.routeIds[0]}:${x.stationId}:${x.stops}`;
-        const q = new URLSearchParams({ q: rideKeys(odsay, true).slice(0, 30).join(','), later: rideKeys(odsay, false).slice(0, 30).join(','), stops: refresh ? '' : stopKeys(odsay).slice(0, 60).join(','),
+        const q = new URLSearchParams({ q: rideKeys(odsay, true).slice(0, 30).join(','), later: rideKeys(odsay, false).slice(0, 30).join(','), pin: pinKeys().join(','), stops: refresh ? '' : stopKeys(odsay).slice(0, 60).join(','),
           wf: refresh ? '' : [...new Set(odsay.map((o) => o.rides[0]?.stationId).filter(Boolean))].slice(0, 20).join(','),
           wt: refresh ? '' : [...new Set(odsay.map((o) => o.rides.at(-1)?.endStationId).filter(Boolean))].slice(0, 20).join(','), from: `${from.lat},${from.lng}`, to: `${to.lat},${to.lng}`,
           paths: refresh ? '' : [...new Set(odsay.slice(0, 6).flatMap((o) => o.rides.map(pathKey)))].join(','), ...(refresh ? { lite: '1' } : {}) });
@@ -292,9 +312,8 @@ export default function Home() {
         let top = fresh;
         if (heldRef.current || !fresh || boardAt(fresh, new Date()) > boardAt(old, atRef.current) + 3) {
           if (!frozenRef.current && old && atRef.current) frozenRef.current = { r: old, t: atRef.current.getTime() };
-          const f = frozenRef.current, gone = f ? (Date.now() - f.t) / 60000 : 0;
-          // 고정한 경로의 도착 "시각"은 그대로 두려고, 지난 시간만큼 남은 분을 줄인다
-          top = f?.r.eta ? { ...f.r, eta: { ...f.r.eta, min: Math.max(0, f.r.eta.min - gone) } } : old;
+          const f = frozenRef.current;
+          top = f ? riding(f, results, headways, sched) : old;
           setHeld(true);
         }
         setRoutes([...(top ? [top] : []), ...next.filter((r) => routeKey(r) !== pinRef.current)]);
@@ -373,7 +392,7 @@ export default function Home() {
         </div>
       )}
       {at && held && !pin && <p className="muted">타려던 버스가 정류장을 지나서, 탄 경로를 계속 보여드려요(시각은 {kstClock(at)} 계산 기준). 새로 찾으려면 출발지를 다시 고르세요.</p>}
-      {at && pin && <p className="muted">{held ? '타려던 버스가 정류장을 지나서, 맨 위 경로는 그때 계산으로 고정했어요.' : '맨 위 경로를 따라가요. 타려던 버스가 지나가면 그때 계산으로 고정해요.'} 아래는 30초마다 새로 찾은 경로예요.</p>}
+      {at && pin && <p className="muted">{held ? '타려던 버스가 정류장을 지나서 탄 것으로 봐요. 갈아탈 버스는 계속 실시간으로 다시 계산해요.' : '맨 위 경로를 따라가요. 타려던 버스가 지나가면 그때 계산으로 고정해요.'} 아래는 30초마다 새로 찾은 경로예요.</p>}
       {at && routes.length > 0 && rtDown && <p className="warn">실시간 버스 위치를 받지 못해 일부는 시간표로 계산했어요.</p>}
       {walkFirst && (
         <article className={`box result best${walkSel ? ' sel' : ''}`} role="button" tabIndex={0} aria-pressed={walkSel} onClick={() => setSelKey('walk')}
@@ -410,7 +429,7 @@ export default function Home() {
               </div>
             </div>
             <div className="wait">
-              {held && key === pin ? <span className="badge live">탄 버스 · 도착 시각 고정</span>
+              {held && key === pin ? <span className="badge live">탄 버스</span>
                 : next !== undefined ? <span className="badge live">버스 {Math.max(0, Math.round(next))}분 뒤 도착</span>
                 : planned !== undefined ? <span className="badge">{planned > 60 ? `다음 차 ${kstClock(at!, planned)}` : `시간표 기준 ${Math.round(planned)}분 뒤`}</span>
                 : r.eta ? <span className="badge">약 {Math.round(leg.intervalMin ?? 0)}분 간격 (추정)</span>
