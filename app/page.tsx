@@ -244,8 +244,12 @@ export default function Home() {
         && r.rides[i].routeIds.some((id) => sched.firstBus?.[`${id}:${r.rides[i].stationId}`] !== undefined));
       const ended = (r: (typeof ranked)[number]) => !r.eta && ((r.firstBus !== undefined && r.firstBus <= nowMin) || transferEnded(r));
       // 같은 정류장에서 같은 버스를 타고 갈아타지 않고 가는 후보가 더 빠르거나 같으면, 중간에 갈아타는 후보는 뺀다 (355번 그대로 vs 아라초 환승)
-      const detour = (r: (typeof ranked)[number]) => ranked.some((q) => q.rides.length < r.rides.length && q.eta && r.eta && q.eta.min <= r.eta.min
-        && q.rides[0].stationId === r.rides[0].stationId && q.rides[0].routeIds.some((id) => r.rides[0].routeIds.includes(id)));
+      // 같은 버스(노선)를 더 먼 정류장에서 타는 후보도, 가까운 쪽 후보가 더 빠르거나 같으면 뺀다 (제주시청에서 탈 수 있는 341·342를 법원까지 18분 걸어가서 타라고 함).
+      // 버스가 가까운 정류장을 이미 지나쳤다면 먼 쪽 후보가 더 빨라서 남는다. 같으면 덜 걷는 쪽.
+      const walkOf = (r: Route) => r.candidate.legs.reduce((s, l) => s + l.walkBeforeMin, r.candidate.walkAfterMin);
+      const detour = (r: (typeof ranked)[number]) => ranked.some((q) => q !== r && q.eta && r.eta && q.rides.length <= r.rides.length
+        && q.rides[0].routeIds.some((id) => r.rides[0].routeIds.includes(id))
+        && (q.rides.length < r.rides.length ? q.eta.min <= r.eta.min : q.eta.min < r.eta.min || (q.eta.min === r.eta.min && walkOf(q) < walkOf(r))));
       const shown = ranked.filter((r) => !ended(r) && !detour(r));
       if (!shown.some((r) => r.eta) && ranked.some(ended)) {
         setRoutes([]);
