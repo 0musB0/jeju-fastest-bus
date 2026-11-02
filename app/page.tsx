@@ -17,6 +17,15 @@ const loadTrip = (): { from: Place | null; to: Place | null } | null => {
   // "현재 위치"는 되살리지 않는다: 그새 움직였을 수 있으니 다시 묻는다
   try { const t = JSON.parse(sessionStorage.getItem(SAVED) ?? 'null'); return t && { ...t, from: t.from?.name === '현재 위치' ? null : t.from }; } catch { return null; }
 };
+// "이 경로로 갈게요"로 고른 경로는 크롬을 껐다 켜도 남도록 localStorage에 둔다. 도착 시각에서 30분이 지나면 버린다.
+const PINNED = 'pinned';
+type Pinned = { from: Place; to: Place; r: Ranked; t: number; held: boolean };
+const loadPinned = (): Pinned | null => {
+  try {
+    const p: Pinned | null = JSON.parse(localStorage.getItem(PINNED) ?? 'null');
+    return p?.r?.eta && Date.now() < p.t + (p.r.eta.min + 30) * 60000 ? p : null;
+  } catch { return null; }
+};
 // 도착 칸 안내 문구: 제주말, 페이지를 열 때마다 바뀐다
 const ASKS = ['어디 감수꽈?', '어드레 가카마씸?', '오늘은 어드레 감서?'];
 // 버스 번호만: "300(신사동)", "365-21" → "300", "365" (같은 번호는 하나로)
@@ -156,6 +165,7 @@ export default function Home() {
   const [walkMin, setWalkMin] = useState<number | null>(null); // 버스 없이 걸어가는 시간(3km 안)
   const [walkPath, setWalkPath] = useState<Pt[] | undefined>(undefined);
   const [pin, setPin] = useState(''); // "이 경로로 갈게요"로 고른 경로: 갱신 때 이 경로만 보여준다
+  const frozenRef = useRef<{ r: Ranked; t: number } | null>(null); // 탄 버스가 지나간 순간의 고른 경로
   const routesRef = useRef<Ranked[]>([]), selRef = useRef(''), pinRef = useRef(''), heldRef = useRef(false), atRef = useRef<Date | null>(null);
   routesRef.current = routes;
   selRef.current = selKey;
@@ -277,8 +287,16 @@ export default function Home() {
         // "이 경로로 갈게요"를 누른 경로만 따라간다. 타려던 버스가 정류장을 지나가면(탔거나 놓침) 새 계산은 다음 차가 되므로 그때부터는 화면을 고정한다.
         const old = cur.find((r) => routeKey(r) === pinRef.current), fresh = ranked.find((r) => routeKey(r) === pinRef.current);
         const boardAt = (r: typeof old, t: Date | null) => (r?.eta && t ? t.getTime() / 60000 + r.eta.boards[0].at : NaN);
-        if (heldRef.current || !fresh || boardAt(fresh, new Date()) > boardAt(old, atRef.current) + 3) return setHeld(true);
-        setRoutes([fresh]);
+        // 고른 경로는 맨 위에, 그 아래에는 새로 찾은 경로들을 그대로 보여준다
+        let top = fresh;
+        if (heldRef.current || !fresh || boardAt(fresh, new Date()) > boardAt(old, atRef.current) + 3) {
+          if (!frozenRef.current && old && atRef.current) frozenRef.current = { r: old, t: atRef.current.getTime() };
+          const f = frozenRef.current, gone = f ? (Date.now() - f.t) / 60000 : 0;
+          // 고정한 경로의 도착 "시각"은 그대로 두려고, 지난 시간만큼 남은 분을 줄인다
+          top = f?.r.eta ? { ...f.r, eta: { ...f.r.eta, min: Math.max(0, f.r.eta.min - gone) } } : old;
+          setHeld(true);
+        }
+        setRoutes([...(top ? [top] : []), ...next.filter((r) => routeKey(r) !== pinRef.current)]);
         setAt(new Date());
         return;
       }
@@ -286,7 +304,7 @@ export default function Home() {
       if (refresh && picked && !next.some((r) => routeKey(r) === routeKey(picked))) return setHeld(true);
       setHeld(false);
       setRoutes(next);
-      if (!refresh) (setSelKey(''), setPin(''));
+      if (!refresh) (setSelKey(''), setPin(''), (frozenRef.current = null));
       setAt(new Date());
       setMsg('');
       live.current = true;
@@ -295,16 +313,29 @@ export default function Home() {
     }
   }
 
-  const restored = useRef(false);
+  const restored = useRef(false), pinBoot = useRef(false);
   useEffect(() => {
-    const t = loadTrip();
-    if (t) { setFrom(t.from); setTo(t.to); }
+    const p = loadPinned(), t = loadTrip();
+    if (p) {
+      // 고른 경로를 그 경로를 찾을 때의 출발지(현재 위치 포함)로 되살린다. 버스 안에서 다시 열어도 같은 경로를 따라간다
+      pinBoot.current = true;
+      frozenRef.current = p.held ? { r: p.r, t: p.t } : null;
+      setFrom(p.from); setTo(p.to); setRoutes([p.r]); setAt(new Date(p.t)); setPin(routeKey(p.r)); setSelKey(routeKey(p.r)); setHeld(p.held);
+    } else if (t) { setFrom(t.from); setTo(t.to); }
     restored.current = true;
   }, []);
   useEffect(() => {
     if (restored.current) try { sessionStorage.setItem(SAVED, JSON.stringify({ from, to })); } catch {}
-    plan();
+    // 되살린 고른 경로는 새로 찾지 않고 갱신만 한다 (새로 찾으면 고른 경로가 풀림)
+    if (pinBoot.current && pin) { pinBoot.current = false; plan(true); } else plan();
   }, [from, to]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    try {
+      const r = frozenRef.current?.r ?? routes.find((x) => routeKey(x) === pin);
+      if (pin && r && from && to && at) localStorage.setItem(PINNED, JSON.stringify({ from, to, r, t: frozenRef.current?.t ?? at.getTime(), held }));
+      else if (restored.current && !pinBoot.current) localStorage.removeItem(PINNED);
+    } catch {}
+  }, [pin, held, at]); // eslint-disable-line react-hooks/exhaustive-deps
   // 자동 갱신: 화면을 보고 있을 때만 30초마다 (서버의 실시간 캐시가 20초). 돌아왔다고 바로 다시 계산하지는 않는다.
   useEffect(() => {
     const id = setInterval(() => { if (document.visibilityState === 'visible') plan(true); }, 30_000);
@@ -336,8 +367,8 @@ export default function Home() {
           <span className="muted">{held ? '고른 경로 유지 중' : '30초마다 자동 갱신'}</span>
         </div>
       )}
-      {at && held && <p className="muted">타려던 버스가 정류장을 지나서, 탄 경로를 계속 보여드려요(시각은 {kstClock(at)} 계산 기준). 새로 찾으려면 출발지를 다시 고르세요.</p>}
-      {at && pin && !held && <p className="muted">고른 경로만 따라가요. 타려던 버스가 지나가면 그때 계산으로 고정해요.</p>}
+      {at && held && !pin && <p className="muted">타려던 버스가 정류장을 지나서, 탄 경로를 계속 보여드려요(시각은 {kstClock(at)} 계산 기준). 새로 찾으려면 출발지를 다시 고르세요.</p>}
+      {at && pin && <p className="muted">{held ? '타려던 버스가 정류장을 지나서, 맨 위 경로는 그때 계산으로 고정했어요.' : '맨 위 경로를 따라가요. 타려던 버스가 지나가면 그때 계산으로 고정해요.'} 아래는 30초마다 새로 찾은 경로예요.</p>}
       {at && routes.length > 0 && rtDown && <p className="warn">실시간 버스 위치를 받지 못해 일부는 시간표로 계산했어요.</p>}
       {walkFirst && (
         <article className={`box result best${walkSel ? ' sel' : ''}`} role="button" tabIndex={0} aria-pressed={walkSel} onClick={() => setSelKey('walk')}
@@ -374,7 +405,8 @@ export default function Home() {
               </div>
             </div>
             <div className="wait">
-              {next !== undefined ? <span className="badge live">버스 {Math.max(0, Math.round(next))}분 뒤 도착</span>
+              {held && key === pin ? <span className="badge live">탄 버스 · 도착 시각 고정</span>
+                : next !== undefined ? <span className="badge live">버스 {Math.max(0, Math.round(next))}분 뒤 도착</span>
                 : planned !== undefined ? <span className="badge">{planned > 60 ? `다음 차 ${kstClock(at!, planned)}` : `시간표 기준 ${Math.round(planned)}분 뒤`}</span>
                 : r.eta ? <span className="badge">약 {Math.round(leg.intervalMin ?? 0)}분 간격 (추정)</span>
                 : r.firstBus !== undefined ? <span className="badge warnb">{r.firstBus > kstMinutes(at!) ? '첫차 전' : '오늘 운행 끝'} · 첫차 {clock12(r.firstBus)}</span>
@@ -404,8 +436,8 @@ export default function Home() {
               <span>걷기 {Math.round(walk)}분{r.fare ? ` · ${r.fare.toLocaleString()}원` : ''}</span>
               {r.eta && <button type="button" className={pin === key ? 'follow on' : 'follow'} onClick={(e) => {
                 e.stopPropagation();
-                if (pin === key) { pinRef.current = ''; heldRef.current = false; routesRef.current = []; setPin(''); setHeld(false); plan(true); }
-                else (setPin(key), setSelKey(key), setRoutes([r]));
+                if (pin === key) { pinRef.current = ''; heldRef.current = false; frozenRef.current = null; routesRef.current = []; setPin(''); setHeld(false); plan(true); }
+                else ((frozenRef.current = null), setHeld(false), setPin(key), setSelKey(key), setRoutes([r, ...routes.filter((x) => routeKey(x) !== key)]));
               }}>{pin === key ? '따라가기 그만' : '이 경로로 갈게요'}</button>}
             </div>
           </article>
