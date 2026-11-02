@@ -50,8 +50,9 @@ async function busLocation(r: string) {
     const parsed = parseBusLocation(await res.text());
     if (!parsed.ok) revalidateTag(`loc-${r}`, { expire: 0 }); // 오류 응답은 캐시에 남기지 않는다
     return parsed;
-  } catch {
-    return { ok: false as const, reason: '실시간 API 응답 없음' };
+  } catch (e) {
+    // 이유를 남긴다: TimeoutError(3초 넘김)인지 연결 실패인지 (서귀포 520번이 계속 실패, 2026-11-02)
+    return { ok: false as const, reason: `실시간 API 응답 없음 (${(e as Error)?.name ?? '?'}${(e as Error & { cause?: { code?: string } })?.cause?.code ? ` ${(e as Error & { cause: { code: string } }).cause.code}` : ''})` };
   }
 }
 
