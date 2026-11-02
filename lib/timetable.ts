@@ -126,6 +126,27 @@ export function offsetAt(p: number[], ord: number): number {
   return m1 + ((ord - o1) * (m2 - m1)) / (o2 - o1 || 1);
 }
 
+// 기준점 사이 정류장의 소요를 순번이 아니라 거리(+정류장마다 0.5분)로 나눈다. offsetAt은 순번으로 보간하므로
+// 정류장 간격이 고르지 않으면 크게 틀렸다 (600번: 공항→정존마을 4정류장 3.9km, 정존마을→동광 1정류장 23km인데
+// 순번으로 나눠 정존마을→예래입구 31km를 18분으로 계산, 2026-11-02 전체 검수). 순번 보간과 0.5분 넘게 다른 정류장만 기준점으로 더한다.
+// 단순화: 정류장 사이를 직선거리로 봄
+function byDistance(p: number[], cum: number[]): number[] {
+  const out = [p[0], p[1]];
+  for (let k = 2; k < p.length; k += 2) {
+    const [o1, m1, o2, m2] = p.slice(k - 2, k + 2);
+    const w = (o: number) => (cum[o] - cum[o1]) / 450 + (o - o1) * 0.5;
+    const m = (o: number) => Math.round((m1 + ((m2 - m1) * w(o)) / (w(o2) || 1)) * 10) / 10;
+    // 보간 오차가 가장 큰 정류장부터 기준점으로 넣는다 (더글러스-포이커)
+    const keep = (a: number, b: number): number[] => {
+      let best = -1, err = 0.5;
+      for (let o = a + 1; o < b; o++) { const e = Math.abs(m(o) - (m(a) + ((m(b) - m(a)) * (o - a)) / (b - a))); if (e > err) (err = e), (best = o); }
+      return best < 0 ? [] : [...keep(a, best), best, m(best), ...keep(best, b)];
+    };
+    out.push(...keep(o1, o2), o2, m2);
+  }
+  return out;
+}
+
 const median = (a: number[]) => [...a].sort((x, y) => x - y)[Math.floor(a.length / 2)];
 
 // 운행 목록 → 노선 하나의 시간표. 가장 흔한 출발 순번을 기준으로 정류장별 소요의 중앙값을 쓴다.
@@ -160,6 +181,7 @@ export function buildEntry(trips: Trip[], cum?: number[]): Entry | null {
   const end = cum ? cum.length - 1 : 0;
   if (cum && p[2 * n - 2] < end) p.push(end, Math.round((p[2 * n - 1] + (cum[end] - cum[p[2 * n - 2]]) / fit) * 10) / 10);
   if (cum && p[0] > 0) p.unshift(0, Math.round((p[1] - (cum[p[0]] - cum[0]) / fit) * 10) / 10);
+  if (cum) p = byDistance(p, cum);
   // 같은 시각 운행은 요일을 합친다
   // 기준 순번보다 뒤에서 시작하는 운행(표의 "노형성당 출발")은 출발 순번을 남긴다. 같은 시각이면 더 앞에서 출발하는 쪽
   const byTime = new Map<number, number>(), from = new Map<number, number>();

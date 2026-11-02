@@ -50,6 +50,8 @@ export const walkMin = (a: Pt, b: Pt) => (distM(a, b) * WALK_DETOUR) / WALK_M_PE
 const base = (no: string) => no.split('-')[0];
 // 한 구간에 묶어도 되는 탑승 시간: 가장 빠른 노선의 1.2배 + 2분 이내
 const similar = (m: number, best: number) => m <= best * 1.2 + 2;
+// 앞뒤 구간과 같은 번호의 노선은 붙이지 않는다 (201 타고 가다 내려 다른 201로 갈아타라는 안내가 됨)
+const clash = (t: Trip, n: number, no: string) => [t.legs[n - 1], t.legs[n + 1]].some((x) => x?.nos.some((y) => base(y) === base(no)));
 
 // 정류장·노선 색인. 서버에서 한 번만 만든다.
 export function indexData(stations: Station[], routes: BusRoute[], shapes: Shapes = {}) {
@@ -223,7 +225,7 @@ export function findTrips(from: Pt, to: Pt, ix: Index, ride: RideMin = defaultRi
     const key = t.legs.map((l) => `${l.fromId}>${l.toId}`).join('|');
     const o = merged.get(key);
     if (!o) merged.set(key, t);
-    else t.legs.forEach((l, n) => { if (similar(l.rideMin, o.legs[n].rideMin)) l.routeIds.forEach((id, q) => { if (!o.legs[n].routeIds.includes(id)) o.legs[n].routeIds.push(id), o.legs[n].nos.push(l.nos[q]); }); });
+    else t.legs.forEach((l, n) => { if (similar(l.rideMin, o.legs[n].rideMin)) l.routeIds.forEach((id, q) => { if (!o.legs[n].routeIds.includes(id) && !clash(o, n, l.nos[q])) o.legs[n].routeIds.push(id), o.legs[n].nos.push(l.nos[q]); }); });
   }
   // 같은 마지막 버스로 끝나는 후보는 3개까지만: 순위용 비용은 배차를 모르니 드문 버스(473번 하루 몇 회) 하나로 끝나는 변형이
   // 20칸을 다 채워 자주 다니는 302번 경로가 빠지는 일이 있었다
@@ -244,8 +246,25 @@ export function findTrips(from: Pt, to: Pt, ix: Index, ride: RideMin = defaultRi
   for (const t of out) t.legs.forEach((l, n) => {
     for (const [r, i] of ix.onStation.get(l.fromId) ?? []) {
       const j = r.stops.indexOf(l.toId, i + 1);
-      if (!l.routeIds.includes(r.id) && j > i && !(n && passesStart(r, i)) && similar(ride(r, i, j), l.rideMin)) l.routeIds.push(r.id), l.nos.push(r.no);
+      if (!l.routeIds.includes(r.id) && j > i && !(n && passesStart(r, i)) && !clash(t, n, r.no) && similar(ride(r, i, j), l.rideMin)) l.routeIds.push(r.id), l.nos.push(r.no);
     }
   });
-  return out;
+  // 탑승 시간이 많이 다른 노선은 버리지 않고 그 시간으로 따로 후보를 만든다. 번호별로 가장 빠른 노선만 남겨서
+  // 밤에만 다니는 201-18(87분)이 낮 201-12·14·20·22(113분)를 밀어내 오전 10시에 10시간 대기가 나왔다
+  // (서귀포 동문로터리 → 세화, 2026-11-02 전체 검수). 순위는 화면이 대기까지 더한 도착 시각으로 다시 정한다.
+  const extra: Trip[] = [];
+  for (const t of out) t.legs.forEach((l, n) => {
+    const mine: Trip[] = [];
+    for (const [r, i] of ix.onStation.get(l.fromId) ?? []) {
+      const j = r.stops.indexOf(l.toId, i + 1);
+      if (j <= i || t.legs.some((x) => x.routeIds.includes(r.id)) || (n && passesStart(r, i)) || clash(t, n, r.no)) continue;
+      const m = ride(r, i, j), c = mine.find((x) => similar(m, x.legs[n].rideMin) && similar(x.legs[n].rideMin, m));
+      if (c) { if (!c.legs[n].routeIds.includes(r.id)) c.legs[n].routeIds.push(r.id), c.legs[n].nos.push(r.no); continue; }
+      const legs = [...t.legs];
+      legs[n] = { ...l, routeIds: [r.id], nos: [r.no], rideMin: m };
+      mine.push({ ...t, legs, cost: t.cost + m - l.rideMin });
+    }
+    extra.push(...mine);
+  });
+  return [...out, ...extra];
 }
