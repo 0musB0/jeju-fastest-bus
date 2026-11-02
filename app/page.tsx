@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import { arrivalMin, kstClock12 as kstClock } from '@/lib/eta';
 import { kstMinutes } from '@/lib/timetable';
 import { BOARD_MARGIN_MIN } from '@/lib/config';
@@ -40,6 +40,23 @@ function riding(f: { r: Ranked; t: number }, results: PlanResults, headways: Hea
   re.candidate.legs[0] = { walkBeforeMin: -BOARD_MARGIN_MIN, nextBusesMin: [0], rideMin: rest };
   const eta = arrivalMin(re.candidate);
   return eta ? { ...re, eta } : fixed;
+}
+// 한눈에 보는 막대: 걷기(회색) · 기다림(옅은색) · 버스(귤색, 번호) 길이를 시간에 비례해서
+function Bar({ r }: { r: Ranked }) {
+  if (!r.eta) return null;
+  const segs: { k: 'walk' | 'wait' | 'bus'; m: number; t?: string }[] = [];
+  let t = 0;
+  r.candidate.legs.forEach((l, j) => {
+    const b = r.eta!.boards[j];
+    segs.push({ k: 'walk', m: Math.max(0, b.atStop - t) }, { k: 'wait', m: Math.max(0, b.at - b.atStop) }, { k: 'bus', m: l.rideMin, t: busNumbers(r.rides[j].busNos)[0] });
+    t = b.at + l.rideMin;
+  });
+  segs.push({ k: 'walk', m: r.candidate.walkAfterMin });
+  return (
+    <div className="bar" aria-hidden="true">
+      {segs.filter((x) => x.m >= 1).map((x, n) => <span key={n} className={`b-${x.k}`} style={{ flexGrow: x.m }}>{x.k === 'bus' ? x.t : x.m >= 4 ? Math.round(x.m) : ''}</span>)}
+    </div>
+  );
 }
 // 도착 칸 안내 문구: 제주말, 페이지를 열 때마다 바뀐다
 const ASKS = ['어디 감수꽈?', '어드레 가카마씸?', '오늘은 어드레 감서?'];
@@ -408,56 +425,50 @@ export default function Home() {
       {routes.map((r, i) => {
         const key = routeKey(r);
         const walk = r.candidate.legs.reduce((s, l) => s + l.walkBeforeMin, r.candidate.walkAfterMin);
-        const leg = r.candidate.legs[0];
-        // 걸어가서 탈 첫 버스: 도착 시각 계산이 고른 버스와 같은 것을 보여준다
-        const b0 = r.eta?.boards[0];
-        const next = b0?.how === 'realtime' ? b0.at : undefined;
-        const planned = b0?.how === 'timetable' ? b0.at : undefined;
-        const [stop, side] = splitStop(r.rides[0].from);
         return (
           <article key={key} className={`box result${i === 0 && r.eta && !walkFirst ? ' best' : ''}${i === sel && !walkSel ? ' sel' : ''}`} style={{ '--i': i } as React.CSSProperties}
             role="button" tabIndex={0} aria-pressed={i === sel && !walkSel} onClick={() => setSelKey(key)}
             onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelKey(key); } }}>
-            <div className="row" style={{ alignItems: 'flex-start' }}>
-              <div style={{ flex: 1 }}>
-                <div className="chips">{chips(busNumbers(r.rides[0].busNos), opened.includes(key), () => setOpened([...opened, key]))}</div>
-                <div className="board"><b>{stop}</b>에서 타요{side && <div className="muted side">{side} 쪽</div>}</div>
-              </div>
-              <div className="arrive">
-                {r.eta ? <><span className="eta">{Math.round(r.eta.min)}분</span><div className="muted">{kstClock(at!, r.eta.min)} 도착</div></>
-                  : <><span className="eta">{r.odsayMin}분</span><div className="muted">+ 대기</div></>}
-              </div>
+            <div className="head">
+              {r.eta ? <><span className="eta">{Math.round(r.eta.min)}분</span><span className="muted">{kstClock(at!, r.eta.min)} 도착</span></>
+                : <><span className="eta">{r.odsayMin}분</span><span className="muted">+ 대기</span></>}
             </div>
-            <div className="wait">
-              {held && key === pin ? <span className="badge live">탄 버스</span>
-                : next !== undefined ? <span className="badge live">버스 {Math.max(0, Math.round(next))}분 뒤 도착</span>
-                : planned !== undefined ? <span className="badge">{planned > 60 ? `다음 차 ${kstClock(at!, planned)}` : `시간표 기준 ${Math.round(planned)}분 뒤`}</span>
-                : r.eta ? <span className="badge">약 {Math.round(leg.intervalMin ?? 0)}분 간격 (추정)</span>
-                : r.firstBus !== undefined ? <span className="badge warnb">{r.firstBus > kstMinutes(at!) ? '첫차 전' : '오늘 운행 끝'} · 첫차 {clock12(r.firstBus)}</span>
-                : <span className="badge warnb">{r.noBusNow ? '지금 운행 중인 버스 없음' : '도착 정보 없음'}</span>}
-            </div>
-            <ol className="steps">
-              {r.rides.slice(1).map((x, j) => {
-                const prev = r.rides[j];
-                const off = splitStop(prev.to)[0], on = splitStop(x.from)[0];
-                const b = r.eta?.boards[j + 1], l = r.candidate.legs[j + 1];
-                const ended = !r.eta && !l.timetableMin && !l.intervalMin;
+            <div className="muted sub">걷기 {Math.round(walk)}분{r.fare ? ` · ${r.fare.toLocaleString()}원` : ''}{r.rides.length > 1 ? ` · 환승 ${r.rides.length - 1}번` : ''}</div>
+            <Bar r={r} />
+            {/* 카카오맵처럼 세로 줄: 걷기(점선) → 타는 정류장 → 버스(실선) → 내리는 정류장 … → 도착. 고른 카드만 전부, 나머지는 첫 정류장만 */}
+            <ol className={`tl${i === sel && !walkSel ? '' : ' short'}`}>
+              {r.rides.map((x, j) => {
+                const l = r.candidate.legs[j], b = r.eta?.boards[j];
+                const [on, side] = splitStop(x.from);
+                const prevOff = j ? splitStop(r.rides[j - 1].to)[0] : '';
+                const riding = held && key === pin && j === 0;
+                const ended = j > 0 && !r.eta && !l.timetableMin && !l.intervalMin;
+                const time = riding ? <span className="when live">탄 버스</span>
+                  : b ? (b.how === 'realtime' ? <span className="when live">{Math.max(0, Math.round(b.at))}분</span>
+                    : b.how === 'interval' ? <span className="when">약 {Math.round(b.at)}분<small>배차 어림</small></span>
+                    : <span className="when">{b.at > 60 ? kstClock(at!, b.at) : `${Math.round(b.at)}분`}<small>시간표</small></span>)
+                  : j === 0 && r.firstBus !== undefined ? <span className="when off">{r.firstBus > kstMinutes(at!) ? '첫차 전' : '운행 끝'}<small>첫차 {clock12(r.firstBus)}</small></span>
+                  : <span className="when off">{ended ? '막차 지났을 수 있음' : j === 0 && r.noBusNow ? '운행 버스 없음' : '정보 없음'}</span>;
                 return (
-                  <li key={j}>
-                    <b>{off}</b>에서 내려 <b className="bus">{busNumbers(x.busNos).join(' · ')}</b>번으로 환승
-                    {on !== off && <span className="muted"> ({on}까지 걸어서)</span>}
-                    {ended && <div className="warn transfer-eta">환승 버스 시간 정보 없음 · 막차가 지났을 수 있어요</div>}
-                    {b && <div className="muted transfer-eta">
-                      {b.how === 'interval' ? `약 ${Math.round(b.at)}분 뒤 탑승 (배차 간격 어림)` : `${Math.round(b.at)}분 뒤 도착 · ${kstClock(at!, b.at)} (시간표 기준)`}
-                      {b.how !== 'interval' && ` · 환승 여유 ${Math.round(b.at - b.atStop)}분`}
-                    </div>}
-                  </li>
+                  <Fragment key={j}>
+                    {l.walkBeforeMin > 0 && (j === 0 || on !== prevOff) && <li className={`walk${j ? ' later' : ''}`}>걸어서 {Math.round(l.walkBeforeMin)}분</li>}
+                    <li className={`stop${j ? ' later' : ''}`}>
+                      <b>{on}</b>{side && <span className="muted side"> {side} 쪽</span>}<span className="muted">{j ? ' 환승' : ' 승차'}</span>
+                      <div className="busbox">
+                        <div className="chips">{chips(busNumbers(x.busNos), opened.includes(`${key}:${j}`), () => setOpened([...opened, `${key}:${j}`]))}</div>
+                        {time}
+                      </div>
+                      {j > 0 && b && b.how !== 'interval' && <div className="muted note">환승 여유 {Math.round(b.at - b.atStop)}분</div>}
+                    </li>
+                    <li className={`ride${j ? ' later' : ''}`}>{x.stops}개 정류장 · {Math.round(l.rideMin)}분</li>
+                    {j === r.rides.length - 1 && <li className="stop off later"><b>{splitStop(x.to)[0]}</b><span className="muted"> 하차</span></li>}
+                  </Fragment>
                 );
               })}
-              <li><b>{splitStop(r.rides.at(-1)!.to)[0]}</b>에서 내려요 <span className="muted">({r.rides.reduce((s, x) => s + x.stops, 0)}정류장)</span></li>
+              {r.candidate.walkAfterMin > 0 && <li className="walk later">걸어서 {Math.round(r.candidate.walkAfterMin)}분</li>}
+              <li className="stop end later"><b>도착</b></li>
             </ol>
-            <div className="muted foot row" style={{ justifyContent: 'space-between' }}>
-              <span>걷기 {Math.round(walk)}분{r.fare ? ` · ${r.fare.toLocaleString()}원` : ''}</span>
+            <div className="foot row" style={{ justifyContent: 'flex-end' }}>
               {r.eta && <button type="button" className={pin === key ? 'follow on' : 'follow'} onClick={(e) => {
                 e.stopPropagation();
                 if (pin === key) { pinRef.current = ''; heldRef.current = false; frozenRef.current = null; routesRef.current = []; setPin(''); setHeld(false); plan(true); }

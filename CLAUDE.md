@@ -21,7 +21,7 @@
 새 세션은 이 지도로 구조를 먼저 파악하고, 고칠 파일만 연다. **파일을 더하거나 빼거나 역할을 바꾸면 같은 커밋에서 이 지도도 고친다.**
 
 ```
-app/page.tsx          화면 전체(클라이언트). 장소 검색 → ODsay 직접 호출 → /api/plan → applyRealtime → arrivalMin → 정렬·표시, 30초마다 lite 재계산. 즐겨찾기(localStorage). 결과 아래 애드센스 1자리(NEXT_PUBLIC_ADSENSE_CLIENT·_SLOT 둘 다 있을 때만)
+app/page.tsx          화면 전체(클라이언트). 경로 카드 = 시간 막대(Bar) + 세로 줄(고른 카드만 전부), "이 경로로 갈게요" 따라가기(localStorage). 장소 검색 → ODsay 직접 호출 → /api/plan → applyRealtime → arrivalMin → 정렬·표시, 30초마다 lite 재계산. 즐겨찾기(localStorage). 결과 아래 애드센스 1자리(NEXT_PUBLIC_ADSENSE_CLIENT·_SLOT 둘 다 있을 때만)
 app/RouteMap.tsx      결과 지도(카카오맵 JS SDK), 노선 선 그리기. RouteLine = 노선 페이지의 노선 한 개 선(펼칠 때 그림)
 app/layout.tsx        폰트(Jua)·메타·상단 메뉴·하단 링크. icon.svg, apple-icon.png, opengraph-image.* = 아이콘·링크 미리보기
 app/ads.txt/route.ts  애드센스 ads.txt (게시자 ID 없으면 404)

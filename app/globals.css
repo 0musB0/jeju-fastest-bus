@@ -110,3 +110,33 @@ details.box summary { cursor: pointer; }
 .times { font-variant-numeric: tabular-nums; word-spacing: 4px; color: var(--ink); }
 .stops { padding-left: 24px; margin: 8px 0 0; }
 .stops li { margin-bottom: 2px; }
+
+/* 경로 카드: 세로 줄 (카카오맵 길찾기처럼) */
+.head { display: flex; align-items: baseline; gap: 10px; }
+.head .eta { font-size: 34px; }
+.sub { font-size: 14px; margin: 2px 0 10px; }
+.tl { list-style: none; margin: 0; padding: 0 0 0 22px; }
+.tl li { position: relative; }
+.tl li::before { content: ''; position: absolute; left: -15px; top: 0; bottom: 0; width: 0; } /* 세로 선 */
+.tl .walk, .tl .ride { font-size: 13px; color: var(--muted); padding: 8px 0; }
+.tl .walk::before { border-left: 3px dotted var(--line); }
+.tl .ride::before { border-left: 4px solid var(--accent); left: -15.5px; }
+.tl .stop { padding: 4px 0; font-size: 16px; }
+.tl .stop:not(.off):not(.end)::before { border-left: 4px solid var(--accent); left: -15.5px; top: 14px; }
+.tl .stop::after { content: ''; position: absolute; left: -21px; top: 7px; width: 12px; height: 12px; border-radius: 50%; background: var(--card); border: 3px solid var(--accent); }
+.tl .stop.end::after { background: var(--ink); border-color: var(--ink); }
+.busbox { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 4px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); }
+.busbox .chips { margin: 0; gap: 4px; }
+.busbox .chip { font-size: 17px; padding: 4px 8px 2px; }
+.when { flex: none; text-align: right; font-weight: 700; font-size: 16px; color: var(--ink); font-variant-numeric: tabular-nums; }
+.when.live { color: var(--red); }
+.when.off { color: var(--muted); font-weight: 400; font-size: 14px; }
+.when small { display: block; font-weight: 400; font-size: 12px; color: var(--muted); }
+.note { font-size: 13px; margin-top: 3px; }
+.tl.short .later { display: none; }
+.when small { display: inline; margin-left: 4px; }
+.bar { display: flex; gap: 2px; height: 22px; margin: 0 0 12px; border-radius: 6px; overflow: hidden; font-size: 12px; line-height: 22px; text-align: center; }
+.bar span { flex-basis: 0; min-width: 18px; overflow: hidden; white-space: nowrap; }
+.bar .b-walk { background: var(--line); color: var(--muted); }
+.bar .b-wait { background: var(--accent-bg); color: var(--accent); }
+.bar .b-bus { min-width: 34px; background: var(--accent); color: #fff; font-family: 'Jua', sans-serif; font-size: 14px; }
