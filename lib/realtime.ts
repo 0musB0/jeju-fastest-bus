@@ -88,10 +88,11 @@ export function applyRealtime(route: Route, results: PlanResults, headways: Head
   return { ...route, candidate: { ...route.candidate, legs }, ...(noBusNow ? { noBusNow } : {}), ...(firstBus !== undefined ? { firstBus } : {}) };
 }
 
-// 서버가 우리 데이터로 찾은 후보 → 화면 후보. ODsay에 같은 버스·같은 정류장 조합이 이미 있으면 뺀다.
+// 같은 버스·같은 정류장 조합인지 (ODsay 경로 ↔ 우리 후보)
+export const sameRide = (r: Route, t: Trip) => r.rides.length === t.legs.length && t.legs.every((l, n) => r.rides[n].stationId === l.fromId && l.routeIds.some((id) => r.rides[n].routeIds.includes(id)));
+// 서버가 우리 데이터로 찾은 후보 → 화면 후보. existing에 같은 조합이 이미 있으면 뺀다.
 export function tripsToRoutes(trips: Trip[], existing: Route[]): Route[] {
-  const covered = (t: Trip) => existing.some((r) => r.rides.length === t.legs.length && t.legs.every((l, n) => r.rides[n].stationId === l.fromId && l.routeIds.some((id) => r.rides[n].routeIds.includes(id))));
-  return trips.filter((t) => !covered(t)).map((t) => {
+  return trips.filter((t) => !existing.some((r) => sameRide(r, t))).map((t) => {
     const legs = t.legs.map((l) => ({ walkBeforeMin: Math.round(l.walkBeforeMin), rideMin: l.rideMin }));
     const walkAfterMin = Math.round(t.walkAfterMin);
     return {

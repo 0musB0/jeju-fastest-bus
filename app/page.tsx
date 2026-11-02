@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { arrivalMin, kstClock12 as kstClock } from '@/lib/eta';
 import { kstMinutes } from '@/lib/timetable';
 import { parseOdsay, type Route } from '@/lib/odsay';
-import { applyRealtime, tripsToRoutes, rideKeys, stopKeys, onOurRoutes, withOurWalks, type Headways, type PlanResults, type Schedules } from '@/lib/realtime';
+import { applyRealtime, tripsToRoutes, sameRide, rideKeys, stopKeys, onOurRoutes, withOurWalks, type Headways, type PlanResults, type Schedules } from '@/lib/realtime';
 import type { Trip } from '@/lib/direct';
 import RouteMap from './RouteMap';
 
@@ -228,7 +228,9 @@ export default function Home() {
       }
       if (stale()) return;
       // 이동 시간만으로 거르지 않는다: 대기까지 더한 도착 시각으로만 비교한다
-      const byTime = [...odsay, ...tripsToRoutes(trips, odsay)];
+      // 같은 버스·정류장 조합이면 우리 후보를 쓴다: 탑승 시간이 시간표 기준이고 가지 노선이 모두 묶여 있다.
+      // ODsay 쪽을 남겼더니 ODsay의 긴 탑승 시간 때문에 바로 가는 355번이 아라초 환승 경로보다 뒤로 밀렸다 (2026-11-02)
+      const byTime = [...odsay.filter((o) => !trips.some((t) => sameRide(o, t))), ...tripsToRoutes(trips, [])];
       if (!byTime.length) return setMsg(odsayErr.current || '버스로 가는 경로가 없어요. 걸어가기 가까운 거리일 수 있어요.');
       // 대기를 알 수 있는 후보가 먼저, 그 안에서 도착이 빠른 순. 모르면 이동 시간 순으로 맨 뒤.
       const ranked = byTime
@@ -241,7 +243,10 @@ export default function Home() {
       const transferEnded = (r: Route) => r.candidate.legs.some((l, i) => i > 0 && !l.timetableMin && !l.nextBusesMin && !l.intervalMin
         && r.rides[i].routeIds.some((id) => sched.firstBus?.[`${id}:${r.rides[i].stationId}`] !== undefined));
       const ended = (r: (typeof ranked)[number]) => !r.eta && ((r.firstBus !== undefined && r.firstBus <= nowMin) || transferEnded(r));
-      const shown = ranked.filter((r) => !ended(r));
+      // 같은 정류장에서 같은 버스를 타고 갈아타지 않고 가는 후보가 더 빠르거나 같으면, 중간에 갈아타는 후보는 뺀다 (355번 그대로 vs 아라초 환승)
+      const detour = (r: (typeof ranked)[number]) => ranked.some((q) => q.rides.length < r.rides.length && q.eta && r.eta && q.eta.min <= r.eta.min
+        && q.rides[0].stationId === r.rides[0].stationId && q.rides[0].routeIds.some((id) => r.rides[0].routeIds.includes(id)));
+      const shown = ranked.filter((r) => !ended(r) && !detour(r));
       if (!shown.some((r) => r.eta) && ranked.some(ended)) {
         setRoutes([]);
         setAt(null);
