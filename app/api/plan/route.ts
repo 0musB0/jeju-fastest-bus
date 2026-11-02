@@ -67,7 +67,15 @@ export async function GET(req: Request) {
   const tripLater = trips.flatMap((t) => t.legs.slice(1).flatMap((l) => l.routeIds.map((r) => [r, l.fromId])));
 
   // 실시간 10칸: ODsay 첫 버스, 우리 후보의 구간들(순위 순, 환승 버스 포함), ODsay 환승 버스 순. 한 구간에 노선이 여럿이라 돌아가며 하나씩 고른다.
-  const lists = [...pairs.map(([r]) => [r]), ...trips.flatMap((t) => t.legs.map((l) => l.routeIds)), ...laterPairs.map(([r]) => [r])];
+  // 한 구간의 노선은 시간표상 곧 오는 것부터 조회한다. 예전에는 목록 첫 노선만 봐서 밤에만 다니는 201-18을 아침에 조회하고,
+  // 2정류장 앞에 와 있던 201-12 버스를 놓쳤다 (온평초, 2026-11-02). 시간표가 없는 노선은 중간 순서.
+  const date = new Date(), now = kstMinutes(date), today = kstDay(date);
+  const soon = (r: string, s: string) => {
+    const route = routeById.get(r), e = tableOf(route), ord = route?.stops.indexOf(s) ?? -1;
+    return e && ord >= 0 ? (arrivals(e, ord, now, 180, today)[0] ?? 9999) : 500;
+  };
+  const bySoon = (ids: string[], s: string) => [...ids].sort((a, b) => soon(a, s) - soon(b, s));
+  const lists = [...pairs.map(([r]) => [r]), ...trips.flatMap((t) => t.legs.map((l) => bySoon(l.routeIds, l.fromId))), ...laterPairs.map(([r]) => [r])];
   const routeIds: string[] = [];
   for (let k = 0; routeIds.length < MAX_ROUTES && lists.some((l) => l.length > k); k++) {
     for (const l of lists) if (l[k] && !routeIds.includes(l[k]) && routeIds.length < MAX_ROUTES) routeIds.push(l[k]);
@@ -94,7 +102,6 @@ export async function GET(req: Request) {
     if (h) headways[r] = h;
   }
   // 시간표 (KST 기준): 오늘 남은 버스(가까운 12대, 자정 넘긴 막차 포함), 오늘 더 없으면 첫차 시각
-  const date = new Date(), now = kstMinutes(date), today = kstDay(date);
   const nextDay = now >= 720 ? kstDay(date, 1) : today; // 막차 뒤 첫차는 오후면 내일 요일로
   const scheduled: Record<string, number[]> = {}, firstBus: Record<string, number> = {};
   const pending: Record<string, number[]> = {}; // 시간표 버스 중 아직 기점을 떠나지 않은 것 (실시간 위치에 안 보이는 버스)
