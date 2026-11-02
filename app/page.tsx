@@ -327,7 +327,11 @@ export default function Home() {
   useEffect(() => {
     if (restored.current) try { sessionStorage.setItem(SAVED, JSON.stringify({ from, to })); } catch {}
     // 되살린 고른 경로는 새로 찾지 않고 갱신만 한다 (새로 찾으면 고른 경로가 풀림)
-    if (pinBoot.current && pin) { pinBoot.current = false; plan(true); } else plan();
+    if (pinBoot.current) {
+      if (pin) (pinBoot.current = false), (live.current = true), plan(true); // 첫 렌더(아직 pin 전)에는 아무것도 안 함: plan()이 되살린 경로를 지움
+      return;
+    }
+    plan();
   }, [from, to]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     try {
