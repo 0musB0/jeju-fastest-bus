@@ -69,18 +69,21 @@ test('환승 버스가 몇 분 뒤 오는지와 여유를 화면에 줄 수 있�
   assert.deepEqual(arrivalMin(c)?.boards, [{ at: 5, atStop: 0, how: 'realtime' }, { at: 30, atStop: 16, how: 'timetable' }]);
 });
 
-test('실시간에 안 보이는(아직 기점 출발 전) 시간표 버스가 더 이르면 그 버스를 탄다', () => {
+test('실시간이 기준: 시간표는 실시간에 안 보이는(아직 기점 출발 전) 버스에만', () => {
   const leg = { walkBeforeMin: 2, rideMin: 10, nextBusesMin: [25], pendingMin: [5, 40] };
   const r = arrivalMin({ legs: [leg], walkAfterMin: 1 })!;
-  assert.equal(r.min, 16);
+  assert.equal(r.min, 16); // 기점에서 곧 출발할 5분 뒤 버스
   assert.equal(r.boards[0].how, 'timetable');
-  // 실시간 버스가 더 이르면 실시간
-  const r2 = arrivalMin({ legs: [{ ...leg, nextBusesMin: [4] }], walkAfterMin: 1 })!;
-  assert.equal(r2.min, 15);
+  // 시간표에 더 이른 버스가 있어도 이미 출발한(실시간에 보여야 할) 버스면 실시간을 믿는다
+  const r2 = arrivalMin({ legs: [{ walkBeforeMin: 2, rideMin: 10, nextBusesMin: [25], timetableMin: [8, 30] }], walkAfterMin: 1 })!;
+  assert.equal(r2.min, 36);
   assert.equal(r2.boards[0].how, 'realtime');
+  // 실시간 버스를 못 타면 그 뒤 시간표 버스
+  const r3 = arrivalMin({ legs: [{ walkBeforeMin: 5, rideMin: 10, nextBusesMin: [3], timetableMin: [3, 8, 30] }], walkAfterMin: 1 })!;
+  assert.equal(r3.min, 19);
 });
 
-test('환승 버스도 실시간 버스가 시간표보다 이르면 그 버스를 탄다', () => {
+test('환승 버스도 실시간 버스가 있으면 그 버스를 탄다', () => {
   const c = { legs: [{ walkBeforeMin: 2, nextBusesMin: [5], rideMin: 10 }, { walkBeforeMin: 1, nextBusesMin: [10, 20], timetableMin: [150], rideMin: 20 }], walkAfterMin: 3 };
   const r = arrivalMin(c)!;
   // 15분에 내려 16분에 환승 정류장, 3분 여유 → 20분 뒤 실시간 버스 (시간표 150분 아님)

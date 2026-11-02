@@ -5,7 +5,7 @@ export type BusLeg = {
   walkBeforeMin: number; // 이 정류장까지 걷는 시간 (첫 구간은 출발지에서, 환승은 앞 정류장에서)
   nextBusesMin?: number[]; // ① 실시간: 지금부터 몇 분 뒤 도착하는지 (가까운 순)
   timetableMin?: number[]; // ② 시간표: 지금부터 몇 분 뒤 이 정류장에 오는지 (가까운 순)
-  pendingMin?: number[]; // 시간표 버스 중 아직 기점을 떠나지 않아 실시간에 안 보이는 것 (첫 구간만)
+  pendingMin?: number[]; // 시간표 버스 중 아직 기점을 떠나지 않아 실시간에 안 보이는 것
   intervalMin?: number; // ③ 배차 간격 (시간표가 없을 때)
   rideMin: number;
 };
@@ -26,13 +26,14 @@ export function arrivalMin(c: Candidate): { min: number; source: WaitSource; boa
     // 환승 버스는 3분 이상 여유가 있어야 탈 수 있다고 본다 (빠듯한 환승은 다음 차로 계산)
     const canBoard = (b: number) => b >= atStop + (i === 0 ? BOARD_MARGIN_MIN : TRANSFER_MARGIN_MIN);
     const bus = buses.find(canBoard);
-    // 실시간은 이미 노선에 나온 버스만 보인다. 곧 기점을 출발할 시간표 버스가 더 이르면 그 버스를 탄다.
+    // 실시간이 기준이다 (사용자 요청 2026-11-02). 시간표는 실시간에 안 보이는 버스, 곧 아직 기점을 떠나지 않은 버스(pending)에만 쓰고,
+    // 실시간 위치를 못 받은 구간에서만 시간표 전체를 쓴다. 환승 구간도 같다.
     const pend = buses.length ? leg.pendingMin?.find(canBoard) : undefined;
-    const scheduled = leg.timetableMin?.find(canBoard);
+    // 실시간 버스를 다 못 타면 그 뒤 시간표 버스 (시간표의 출발 순번 어림이 틀려 pending에서 빠진 버스 대비)
+    const scheduled = leg.timetableMin?.find((b) => canBoard(b) && (!buses.length || b > buses[buses.length - 1]));
     let board: number;
     let how: Board['how'] = 'timetable';
-    if (i > 0 && bus !== undefined && !(scheduled !== undefined && scheduled < bus)) (board = bus), (how = 'realtime');
-    else if (i === 0 && bus !== undefined && !(pend !== undefined && pend < bus)) (board = bus), (how = 'realtime');
+    if (bus !== undefined && !(pend !== undefined && pend < bus)) (board = bus), (how = 'realtime');
     else if (pend !== undefined) {
       board = pend;
       source = 'timetable';

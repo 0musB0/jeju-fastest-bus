@@ -74,7 +74,7 @@ export function applyRealtime(route: Route, results: PlanResults, headways: Head
     const freq = ride.routeIds.reduce((s, id) => s + (headways[id] ? 1 / headways[id] : 0), 0);
     const times = keys(ride).flatMap((k) => sched.scheduled?.[k] ?? []).sort((a, b) => a - b);
     const next = { ...leg, ...(freq ? { intervalMin: 1 / freq } : {}), ...(times.length ? { timetableMin: times } : {}) };
-    const pend = i > 0 ? [] : keys(ride).flatMap((k) => sched.pending?.[k] ?? []).sort((a, b) => a - b);
+    const pend = keys(ride).flatMap((k) => sched.pending?.[k] ?? []).sort((a, b) => a - b); // 환승 구간도: 실시간에 안 보이는 버스
     if (pend.length) Object.assign(next, { pendingMin: pend });
     // 단순화: 이 구간의 정류장당 평균 소요(탑승 시간 ÷ 정류장 수)를 버스가 오는 길에도 씀, 신호·정차 편차는 무시
     const perStop = ride.stops > 0 && leg.rideMin > 0 ? leg.rideMin / ride.stops : MIN_PER_STOP;
