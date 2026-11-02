@@ -6,7 +6,7 @@ export type Station = { id: string; name: string; lat: number; lng: number };
 export type BusRoute = { id: string; no: string; to: string; stops: string[] };
 export type Pt = { lat: number; lng: number };
 // walkPath = 이 정류장까지 걷는 길(첫 구간은 출발지에서), walkAfterPath = 내려서 목적지까지
-export type TripLeg = { routeIds: string[]; nos: string[]; fromId: string; fromName: string; toId: string; toName: string; stops: number; walkBeforeMin: number; rideMin: number; distM: number; fromPt: Pt; toPt: Pt; path: Pt[]; walkPath?: Pt[] };
+export type TripLeg = { routeIds: string[]; nos: string[]; stopsBy?: number[]; fromId: string; fromName: string; toId: string; toName: string; stops: number; walkBeforeMin: number; rideMin: number; distM: number; fromPt: Pt; toPt: Pt; path: Pt[]; walkPath?: Pt[] };
 export type Trip = { legs: TripLeg[]; walkAfterMin: number; cost: number; walkAfterPath?: Pt[] };
 // 노선의 i번째 → j번째 정류장 탑승 시간(분). 서버가 시간표로 채워 넘긴다.
 // 노선 모양: p = [위도, 경도, ...], s = 정류장마다 p의 선분 번호(k → k+1), 못 맞추면 -1 (scripts/fetch-shapes.mjs)

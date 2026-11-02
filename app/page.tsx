@@ -27,6 +27,16 @@ const loadPinned = (): Pinned | null => {
     return p?.r?.eta && Date.now() < p.t + (p.r.eta.min + 30) * 60000 ? p : null;
   } catch { return null; }
 };
+// 도착 시각 계산에 실제로 쓴 버스의 노선 번호 (배차 간격 어림처럼 특정 버스가 없으면 null → 후보 번호 전부)
+function boardIdx(r: Ranked, j: number): number {
+  const b = r.eta?.boards[j];
+  const id = b && b.how !== 'interval' ? r.candidate.legs[j].src?.find(([m]) => Math.abs(m - b.at) < 1e-6)?.[1] : undefined;
+  return id ? r.rides[j].routeIds.indexOf(id) : -1;
+}
+function boardNo(r: Ranked, j: number): string | null {
+  const k = boardIdx(r, j);
+  return k >= 0 ? busNumbers([r.rides[j].busNos[k]])[0] : null;
+}
 // 탄 버스 안: 첫 버스는 이미 탔다고 보고(남은 탑승 시간만), 환승 버스는 새 실시간·시간표로 다시 계산한다.
 // 다시 계산할 수 없으면 고정한 시각을 그대로 쓴다 (지난 시간만큼 남은 분을 줄임)
 function riding(f: { r: Ranked; t: number }, results: PlanResults, headways: Headways, sched: Schedules): Ranked {
@@ -37,7 +47,8 @@ function riding(f: { r: Ranked; t: number }, results: PlanResults, headways: Hea
   const re = applyRealtime(bare, results, headways, sched);
   // 단순화: 탄 버스는 시간표 탑승 시간대로 간다고 봄. walkBeforeMin을 -여유로 둬서 "지금(0분) 타는 버스"가 되게 함
   const rest = Math.max(0, f.t / 60000 + b0.at + leg0.rideMin - now);
-  re.candidate.legs[0] = { walkBeforeMin: -BOARD_MARGIN_MIN, nextBusesMin: [0], rideMin: rest };
+  const id0 = f.r.candidate.legs[0].src?.find(([m]) => Math.abs(m - b0.at) < 1e-6)?.[1];
+  re.candidate.legs[0] = { walkBeforeMin: -BOARD_MARGIN_MIN, nextBusesMin: [0], rideMin: rest, ...(id0 ? { src: [[0, id0]] as [number, string][] } : {}) };
   const eta = arrivalMin(re.candidate);
   return eta ? { ...re, eta } : fixed;
 }
@@ -48,7 +59,7 @@ function Bar({ r }: { r: Ranked }) {
   let t = 0;
   r.candidate.legs.forEach((l, j) => {
     const b = r.eta!.boards[j];
-    segs.push({ k: 'walk', m: Math.max(0, b.atStop - t) }, { k: 'wait', m: Math.max(0, b.at - b.atStop) }, { k: 'bus', m: l.rideMin, t: busNumbers(r.rides[j].busNos)[0] });
+    segs.push({ k: 'walk', m: Math.max(0, b.atStop - t) }, { k: 'wait', m: Math.max(0, b.at - b.atStop) }, { k: 'bus', m: l.rideMin, t: boardNo(r, j) ?? busNumbers(r.rides[j].busNos)[0] });
     t = b.at + l.rideMin;
   });
   segs.push({ k: 'walk', m: r.candidate.walkAfterMin });
@@ -444,9 +455,9 @@ export default function Home() {
                 const riding = held && key === pin && j === 0;
                 const ended = j > 0 && !r.eta && !l.timetableMin && !l.intervalMin;
                 const time = riding ? <span className="when live">탄 버스</span>
-                  : b ? (b.how === 'realtime' ? <span className="when live">{Math.max(0, Math.round(b.at))}분</span>
-                    : b.how === 'interval' ? <span className="when">약 {Math.round(b.at)}분<small>배차 어림</small></span>
-                    : <span className="when">{b.at > 60 ? kstClock(at!, b.at) : `${Math.round(b.at)}분`}<small>시간표</small></span>)
+                  : b ? (b.how === 'realtime' ? <span className="when live">{Math.max(0, Math.round(b.at))}분 뒤 도착<small>실시간</small></span>
+                    : b.how === 'interval' ? <span className="when">약 {Math.round(b.at)}분 뒤 도착<small>배차 어림</small></span>
+                    : <span className="when">{b.at > 60 ? `${kstClock(at!, b.at)} 도착` : `${Math.round(b.at)}분 뒤 도착`}<small>시간표</small></span>)
                   : j === 0 && r.firstBus !== undefined ? <span className="when off">{r.firstBus > kstMinutes(at!) ? '첫차 전' : '운행 끝'}<small>첫차 {clock12(r.firstBus)}</small></span>
                   : <span className="when off">{ended ? '막차 지났을 수 있음' : j === 0 && r.noBusNow ? '운행 버스 없음' : '정보 없음'}</span>;
                 return (
@@ -455,12 +466,12 @@ export default function Home() {
                     <li className={`stop${j ? ' later' : ''}`}>
                       <b>{on}</b>{side && <span className="muted side"> {side} 쪽</span>}<span className="muted">{j ? ' 환승' : ' 승차'}</span>
                       <div className="busbox">
-                        <div className="chips">{chips(busNumbers(x.busNos), opened.includes(`${key}:${j}`), () => setOpened([...opened, `${key}:${j}`]))}</div>
+                        <div className="chips">{chips(boardNo(r, j) ? [boardNo(r, j)!] : busNumbers(x.busNos), opened.includes(`${key}:${j}`), () => setOpened([...opened, `${key}:${j}`]))}</div>
                         {time}
                       </div>
                       {j > 0 && b && b.how !== 'interval' && <div className="muted note">환승 여유 {Math.round(b.at - b.atStop)}분</div>}
                     </li>
-                    <li className={`ride${j ? ' later' : ''}`}>{x.stops}개 정류장 · {Math.round(l.rideMin)}분</li>
+                    <li className={`ride${j ? ' later' : ''}`}>{x.stopsBy?.[boardIdx(r, j)] ?? x.stops}개 정류장 · {riding ? `내릴 때까지 약 ${Math.round(l.rideMin)}분` : `${Math.round(l.rideMin)}분 타요`}</li>
                     {j === r.rides.length - 1 && <li className="stop off later"><b>{splitStop(x.to)[0]}</b><span className="muted"> 하차</span></li>}
                   </Fragment>
                 );

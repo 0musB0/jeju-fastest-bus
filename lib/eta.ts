@@ -8,6 +8,7 @@ export type BusLeg = {
   pendingMin?: number[]; // 시간표 버스 중 아직 기점을 떠나지 않아 실시간에 안 보이는 것
   intervalMin?: number; // ③ 배차 간격 (시간표가 없을 때)
   rideMin: number;
+  src?: [number, string][]; // 위 분 값마다 어느 노선(routeId)의 버스인지: 화면에 실제로 탈 버스 번호 하나만 보여줌
 };
 export type Candidate = { legs: BusLeg[]; walkAfterMin: number };
 export type WaitSource = 'realtime' | 'timetable' | 'unknown';

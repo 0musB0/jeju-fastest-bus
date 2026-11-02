@@ -73,6 +73,7 @@ export function applyRealtime(route: Route, results: PlanResults, headways: Head
     // 여러 노선이 같은 구간을 다니면 합친 간격 = 1 / Σ(1/간격), 시간표는 합쳐서 가까운 순
     const freq = ride.routeIds.reduce((s, id) => s + (headways[id] ? 1 / headways[id] : 0), 0);
     const times = keys(ride).flatMap((k) => sched.scheduled?.[k] ?? []).sort((a, b) => a - b);
+    const src: [number, string][] = ride.routeIds.flatMap((id) => [...(sched.scheduled?.[`${id}:${ride.stationId}`] ?? []), ...(sched.pending?.[`${id}:${ride.stationId}`] ?? [])].map((m): [number, string] => [m, id]));
     const next = { ...leg, ...(freq ? { intervalMin: 1 / freq } : {}), ...(times.length ? { timetableMin: times } : {}) };
     const pend = keys(ride).flatMap((k) => sched.pending?.[k] ?? []).sort((a, b) => a - b); // 환승 구간도: 실시간에 안 보이는 버스
     if (pend.length) Object.assign(next, { pendingMin: pend });
@@ -80,6 +81,8 @@ export function applyRealtime(route: Route, results: PlanResults, headways: Head
     const perStop = ride.stops > 0 && leg.rideMin > 0 ? leg.rideMin / ride.stops : MIN_PER_STOP;
     const found = ride.routeIds.map((id) => results[`${id}:${ride.stationId}`]).filter(Array.isArray);
     const mins = found.flat().map((n) => n * perStop).sort((a, b) => a - b);
+    for (const id of ride.routeIds) { const v = results[`${id}:${ride.stationId}`]; if (Array.isArray(v)) for (const n of v) src.push([n * perStop, id]); }
+    if (src.length) Object.assign(next, { src });
     if (!mins.length && found.length && i === 0) noBusNow = true;
     return mins.length ? { ...next, nextBusesMin: mins } : next;
   });
@@ -97,7 +100,7 @@ export function tripsToRoutes(trips: Trip[], existing: Route[]): Route[] {
     const walkAfterMin = Math.round(t.walkAfterMin);
     return {
       candidate: { legs, walkAfterMin },
-      rides: t.legs.map((l, n) => ({ busNos: l.nos, routeIds: l.routeIds, stationId: l.fromId, from: l.fromName, to: l.toName, stops: l.stops, fromPt: l.fromPt, toPt: l.toPt, path: l.path, walkPath: l.walkPath, ...(n === t.legs.length - 1 ? { walkAfterPath: t.walkAfterPath } : {}) })),
+      rides: t.legs.map((l, n) => ({ busNos: l.nos, routeIds: l.routeIds, stationId: l.fromId, from: l.fromName, to: l.toName, stops: l.stops, ...(l.stopsBy ? { stopsBy: l.stopsBy } : {}), fromPt: l.fromPt, toPt: l.toPt, path: l.path, walkPath: l.walkPath, ...(n === t.legs.length - 1 ? { walkAfterPath: t.walkAfterPath } : {}) })),
       fare: routeFare(t.legs.map((l) => { const f = l.nos.flatMap((n) => legFare(n, l.distM) ?? []); return f.length ? Math.max(...f) : null; }), 0),
       odsayMin: legs.reduce((s, l) => s + l.walkBeforeMin + l.rideMin, 0) + walkAfterMin,
     };

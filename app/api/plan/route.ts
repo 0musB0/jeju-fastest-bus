@@ -135,6 +135,11 @@ export async function GET(req: Request) {
     if (route && i >= 0 && Number.isInteger(Number(n)) && Number(n) > 0 && j < route.stops.length) paths[k] = legPath(index, route, i, j);
   }
   // lite = 30초 자동 갱신: 지도 선은 처음 받은 것을 화면이 그대로 쓴다
+  // 한 구간에 묶인 노선마다 정류장 수가 다르다(급행 111은 8개, 같은 구간 212는 56개). 화면은 실제로 탈 버스의 수를 보여준다
+  for (const t of trips) for (const l of t.legs) l.stopsBy = l.routeIds.map((id) => {
+    const s = routeById.get(id)?.stops ?? [], i = s.indexOf(l.fromId), j = s.indexOf(l.toId, i + 1);
+    return i >= 0 && j > i ? j - i : l.stops;
+  });
   const out = p.get('lite') ? trips.map((t) => ({ ...t, legs: t.legs.map((l) => ({ ...l, path: [] })) })) : trips;
   // ODsay 구간 확인: 그 노선이 탈 정류장 다음에 내릴 정류장에 서는지 (우리 데이터만 봄)
   const stopsOk: Record<string, boolean> = {};
