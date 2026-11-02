@@ -157,11 +157,12 @@ export async function GET(req: Request) {
   };
   const walkFrom = walkMins(from, p.get('wf')), walkTo = walkMins(to, p.get('wt'));
   // 버스 없이 바로 걸어가는 시간 (3km 안만). 버스보다 빠르면 화면이 "걸어가세요"를 먼저 보여준다
-  let walkAll: number | undefined;
+  let walkAll: number | undefined, walkAllPath: { lat: number; lng: number }[] | undefined;
   if (from && to && !p.get('lite') && distM(from, to) < 3000) {
     const r = walker?.tree(from, 3000)?.to(to);
-    const m = r && isFinite(r.m) ? r.m : distM(from, to) * WALK_DETOUR;
-    walkAll = Math.round(m / WALK_M_PER_MIN);
+    const ok = r && isFinite(r.m);
+    walkAll = Math.round((ok ? r.m : distM(from, to) * WALK_DETOUR) / WALK_M_PER_MIN);
+    walkAllPath = ok ? r.path : [from, to];
   }
-  return Response.json({ results, headways, scheduled, pending, firstBus, trips: out, paths, stopsOk, walkFrom, walkTo, walkAll });
+  return Response.json({ results, headways, scheduled, pending, firstBus, trips: out, paths, stopsOk, walkFrom, walkTo, walkAll, walkAllPath });
 }

@@ -22,7 +22,7 @@ function loadSdk(): Promise<Kakao> {
 type Mark = { pt: Pt; label: string; kind: 'end' | 'stop' };
 
 // 출발 → 승차 → (하차 → 환승 승차)… → 하차 → 도착. 걷는 구간은 점선, 버스 구간은 실선.
-function marks(from: Pt, to: Pt, rides: Ride[]): { list: Mark[]; segs: { path: Pt[]; bus: boolean }[] } {
+function marks(from: Pt, to: Pt, rides: Ride[], walkPath?: Pt[]): { list: Mark[]; segs: { path: Pt[]; bus: boolean }[] } {
   const list: Mark[] = [{ pt: from, label: '출발', kind: 'end' }];
   const segs: { path: Pt[]; bus: boolean }[] = [];
   let last = from;
@@ -34,12 +34,12 @@ function marks(from: Pt, to: Pt, rides: Ride[]): { list: Mark[]; segs: { path: P
     if (i === rides.length - 1) list.push({ pt: r.toPt, label: '하차', kind: 'stop' });
     last = r.toPt;
   });
-  segs.push({ path: rides.at(-1)?.walkAfterPath ?? [last, to], bus: false });
+  segs.push({ path: (rides.length ? rides.at(-1)?.walkAfterPath : walkPath) ?? [last, to], bus: false }); // 버스 없이 걸어가면 walkPath
   list.push({ pt: to, label: '도착', kind: 'end' });
   return { list, segs };
 }
 
-export default function RouteMap({ from, to, rides }: { from: Pt; to: Pt; rides: Ride[] }) {
+export default function RouteMap({ from, to, rides, walkPath }: { from: Pt; to: Pt; rides: Ride[]; walkPath?: Pt[] }) {
   const box = useRef<HTMLDivElement>(null);
   const map = useRef<Kakao>(null);
   const drawn = useRef<Kakao[]>([]);
@@ -55,7 +55,7 @@ export default function RouteMap({ from, to, rides }: { from: Pt; to: Pt; rides:
       map.current ??= new maps.Map(box.current, { center: ll(from), level: 6 });
       drawn.current.forEach((o) => o.setMap(null));
       const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#e8771e';
-      const { list, segs } = marks(from, to, rides);
+      const { list, segs } = marks(from, to, rides, walkPath);
       drawn.current = [
         ...segs.map((s) => new maps.Polyline({ map: map.current, path: s.path.map(ll), strokeWeight: s.bus ? 5 : 3, strokeColor: s.bus ? accent : '#857f74', strokeOpacity: 0.9, strokeStyle: s.bus ? 'solid' : 'shortdash' })),
         ...list.map((m) => new maps.CustomOverlay({ map: map.current, position: ll(m.pt), yAnchor: 1.2, content: `<div class="pin ${m.kind}">${m.label}</div>` })),

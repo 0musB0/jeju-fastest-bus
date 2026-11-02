@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { arrivalMin, kstClock12 as kstClock } from '@/lib/eta';
 import { kstMinutes } from '@/lib/timetable';
-import { parseOdsay, type Route } from '@/lib/odsay';
+import { parseOdsay, type Pt, type Route } from '@/lib/odsay';
 import { applyRealtime, tripsToRoutes, sameRide, rideKeys, stopKeys, onOurRoutes, withOurWalks, type Headways, type PlanResults, type Schedules } from '@/lib/realtime';
 import type { Trip } from '@/lib/direct';
 import RouteMap from './RouteMap';
@@ -154,6 +154,7 @@ export default function Home() {
   const [selKey, setSelKey] = useState(''); // 고른 경로: 30초 갱신으로 순서가 바뀌어도 같은 경로를 따라간다
   const [held, setHeld] = useState(false); // 고른 경로가 갱신 결과에서 빠져 화면을 고정한 상태
   const [walkMin, setWalkMin] = useState<number | null>(null); // 버스 없이 걸어가는 시간(3km 안)
+  const [walkPath, setWalkPath] = useState<Pt[] | undefined>(undefined);
   const [pin, setPin] = useState(''); // "이 경로로 갈게요"로 고른 경로: 갱신 때 이 경로만 보여준다
   const routesRef = useRef<Ranked[]>([]), selRef = useRef(''), pinRef = useRef(''), heldRef = useRef(false), atRef = useRef<Date | null>(null);
   routesRef.current = routes;
@@ -218,7 +219,7 @@ export default function Home() {
         sched = { scheduled: r.scheduled, pending: r.pending, firstBus: r.firstBus };
         trips = r.trips ?? [];
         walkAll = typeof r.walkAll === 'number' ? r.walkAll : null;
-        if (!refresh) setWalkMin(walkAll);
+        if (!refresh) (setWalkMin(walkAll), setWalkPath(r.walkAllPath));
         // ODsay 경로 중 그 버스가 실제로 서지 않는 정류장에서 타거나 내리는 경로는 뺀다 (첫 검색에서 한 번)
         if (!refresh && r.stopsOk) odsay = odsayRef.current = odsay.filter((o) => onOurRoutes(o, r.stopsOk)).map((o) => withOurWalks(o, r.walkFrom, r.walkTo));
         // 지도 선은 첫 검색에서만 받는다 (갱신 응답은 빈 선). 구간 = 탈 정류장 > 내릴 정류장 + 노선
@@ -311,6 +312,9 @@ export default function Home() {
   }, [from, to]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const sel = Math.max(0, routes.findIndex((r) => routeKey(r) === selKey));
+  // 버스보다 걷는 게 빠르거나 같으면 걷기를 맨 위에 두고 기본으로 고른다
+  const walkFirst = !!at && walkMin !== null && routes.length > 0 && !pin && !held && (!routes[0].eta || walkMin <= routes[0].eta.min);
+  const walkSel = walkFirst && (selKey === '' || selKey === 'walk');
   return (
     <main>
       <h1>
@@ -335,13 +339,17 @@ export default function Home() {
       {at && held && <p className="muted">타려던 버스가 정류장을 지나서, 탄 경로를 계속 보여드려요(시각은 {kstClock(at)} 계산 기준). 새로 찾으려면 출발지를 다시 고르세요.</p>}
       {at && pin && !held && <p className="muted">고른 경로만 따라가요. 타려던 버스가 지나가면 그때 계산으로 고정해요.</p>}
       {at && routes.length > 0 && rtDown && <p className="warn">실시간 버스 위치를 받지 못해 일부는 시간표로 계산했어요.</p>}
-      {at && walkMin !== null && routes.length > 0 && !pin && !held && (routes[0].eta ? walkMin <= routes[0].eta.min : true) && (
-        <article className="result best">
-          <b>걸어가는 게 더 빨라요</b>
-          <p>걸어서 <span className="num">{walkMin}분</span>, {kstClock(at, walkMin)} 도착. 아래 버스는 가장 빨라도 {routes[0].eta ? `${Math.round(routes[0].eta.min)}분` : '시간을 알 수 없어요'}.</p>
+      {walkFirst && (
+        <article className={`box result best${walkSel ? ' sel' : ''}`} role="button" tabIndex={0} aria-pressed={walkSel} onClick={() => setSelKey('walk')}
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelKey('walk'); } }}>
+          <div className="row" style={{ alignItems: 'flex-start' }}>
+            <div style={{ flex: 1 }}><div className="board"><b>걸어가요</b></div></div>
+            <div className="arrive"><span className="eta">{walkMin}분</span><div className="muted">{kstClock(at!, walkMin!)} 도착</div></div>
+          </div>
         </article>
       )}
-      {from && to && routes[sel] && <RouteMap from={from} to={to} rides={routes[sel].rides} />}
+      {from && to && walkSel && <RouteMap from={from} to={to} rides={[]} walkPath={walkPath} />}
+      {from && to && !walkSel && routes[sel] && <RouteMap from={from} to={to} rides={routes[sel].rides} />}
       {routes.map((r, i) => {
         const key = routeKey(r);
         const walk = r.candidate.legs.reduce((s, l) => s + l.walkBeforeMin, r.candidate.walkAfterMin);
@@ -352,8 +360,8 @@ export default function Home() {
         const planned = b0?.how === 'timetable' ? b0.at : undefined;
         const [stop, side] = splitStop(r.rides[0].from);
         return (
-          <article key={key} className={`box result${i === 0 && r.eta ? ' best' : ''}${i === sel ? ' sel' : ''}`} style={{ '--i': i } as React.CSSProperties}
-            role="button" tabIndex={0} aria-pressed={i === sel} onClick={() => setSelKey(key)}
+          <article key={key} className={`box result${i === 0 && r.eta && !walkFirst ? ' best' : ''}${i === sel && !walkSel ? ' sel' : ''}`} style={{ '--i': i } as React.CSSProperties}
+            role="button" tabIndex={0} aria-pressed={i === sel && !walkSel} onClick={() => setSelKey(key)}
             onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelKey(key); } }}>
             <div className="row" style={{ alignItems: 'flex-start' }}>
               <div style={{ flex: 1 }}>
