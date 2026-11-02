@@ -152,6 +152,10 @@ export default function Home() {
   const [rtDown, setRtDown] = useState(false); // 실시간 서버가 응답하지 않아 시간표로만 계산했는지
   const [opened, setOpened] = useState<string[]>([]); // 버스 번호를 다 펼친 경로
   const [selKey, setSelKey] = useState(''); // 고른 경로: 30초 갱신으로 순서가 바뀌어도 같은 경로를 따라간다
+  const [held, setHeld] = useState(false); // 고른 경로가 갱신 결과에서 빠져 화면을 고정한 상태
+  const routesRef = useRef<Ranked[]>([]), selRef = useRef('');
+  routesRef.current = routes;
+  selRef.current = selKey;
 
   const odsayErr = useRef('');
   const odsayRef = useRef<Route[] | null>(null); // 출발·도착이 같으면 ODsay 경로는 다시 부르지 않는다 (일일 한도)
@@ -257,7 +261,13 @@ export default function Home() {
         const firsts = ranked.filter(ended).flatMap((r) => (r.firstBus !== undefined ? [r.firstBus] : []));
         return setMsg(`막차가 끝났어요.${firsts.length ? ` 내일 첫차는 ${clock12(Math.min(...firsts))}부터예요.` : ''}`);
       }
-      setRoutes(shown.slice(0, 3));
+      // 자동 갱신 때 고른 경로(안 골랐으면 1위)가 목록에서 빠지면 화면을 그대로 둔다: 그 버스를 이미 탔으면 정류장을 지나쳐 후보에서 빠지기 때문
+      // 단순화: 고정된 동안 시각은 마지막 계산 그대로, 다른 경로가 더 빨라져도 바꾸지 않음
+      const next = shown.slice(0, 3), cur = routesRef.current;
+      const picked = cur[Math.max(0, cur.findIndex((r) => routeKey(r) === selRef.current))];
+      if (refresh && picked && !next.some((r) => routeKey(r) === routeKey(picked))) return setHeld(true);
+      setHeld(false);
+      setRoutes(next);
       if (!refresh) setSelKey('');
       setAt(new Date());
       setMsg('');
@@ -302,9 +312,10 @@ export default function Home() {
       {at && routes.length > 0 && (
         <div className="meta">
           <span><span className="num">{kstClock(at)}</span> 기준 · 도착이 빠른 순</span>
-          <span className="muted">30초마다 자동 갱신</span>
+          <span className="muted">{held ? '고른 경로 유지 중' : '30초마다 자동 갱신'}</span>
         </div>
       )}
+      {at && held && <p className="muted">고른 경로의 버스가 탈 정류장을 지나서, 탄 경로를 계속 보여드려요(시각은 {kstClock(at)} 계산 기준). 새로 찾으려면 출발지를 다시 고르세요.</p>}
       {at && routes.length > 0 && rtDown && <p className="warn">실시간 버스 위치를 받지 못해 일부는 시간표로 계산했어요.</p>}
       {from && to && routes[sel] && <RouteMap from={from} to={to} rides={routes[sel].rides} />}
       {routes.map((r, i) => {
