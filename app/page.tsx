@@ -2,14 +2,14 @@
 import { Fragment, useEffect, useRef, useState } from 'react';
 import { arrivalMin, kstClock12 as kstClock } from '@/lib/eta';
 import { kstMinutes } from '@/lib/timetable';
-import { BOARD_MARGIN_MIN } from '@/lib/config';
+import { passed, riding, shift, walking, type Followed, type Frozen } from '@/lib/follow';
 import { parseOdsay, type Pt, type Route } from '@/lib/odsay';
 import { applyRealtime, tripsToRoutes, sameRide, rideKeys, stopKeys, onOurRoutes, withOurWalks, type Headways, type PlanResults, type Schedules } from '@/lib/realtime';
 import type { Trip } from '@/lib/direct';
 import RouteMap from './RouteMap';
 
 type Place = { name: string; address?: string; lat: number; lng: number };
-type Ranked = Route & { eta: ReturnType<typeof arrivalMin> };
+type Ranked = Followed;
 
 const ODSAY_KEY = process.env.NEXT_PUBLIC_ODSAY_KEY ?? '';
 // 크롬이 뒤에 둔 탭을 지웠다가 다시 열면 페이지가 새로 뜬다. 그때 출발·도착을 되살린다 (탭을 닫으면 사라짐).
@@ -20,7 +20,7 @@ const loadTrip = (): { from: Place | null; to: Place | null } | null => {
 };
 // "이 경로로 갈게요"로 고른 경로는 크롬을 껐다 켜도 남도록 localStorage에 둔다. 도착 시각에서 30분이 지나면 버린다.
 const PINNED = 'pinned';
-type Pinned = { from: Place; to: Place; r: Ranked; t: number; held: boolean };
+type Pinned = { from: Place; to: Place; r: Ranked; t: number; held: boolean; k?: number; since?: number };
 const loadPinned = (): Pinned | null => {
   try {
     const p: Pinned | null = JSON.parse(localStorage.getItem(PINNED) ?? 'null');
@@ -36,21 +36,6 @@ function boardIdx(r: Ranked, j: number): number {
 function boardNo(r: Ranked, j: number): string | null {
   const k = boardIdx(r, j);
   return k >= 0 ? busNumbers([r.rides[j].busNos[k]])[0] : null;
-}
-// 탄 버스 안: 첫 버스는 이미 탔다고 보고(남은 탑승 시간만), 환승 버스는 새 실시간·시간표로 다시 계산한다.
-// 다시 계산할 수 없으면 고정한 시각을 그대로 쓴다 (지난 시간만큼 남은 분을 줄임)
-function riding(f: { r: Ranked; t: number }, results: PlanResults, headways: Headways, sched: Schedules): Ranked {
-  const now = Date.now() / 60000, gone = now - f.t / 60000, b0 = f.r.eta!.boards[0], leg0 = f.r.candidate.legs[0];
-  const fixed = { ...f.r, eta: { ...f.r.eta!, min: Math.max(0, f.r.eta!.min - gone) } };
-  if (f.r.rides.length < 2) return fixed;
-  const bare = { ...f.r, candidate: { ...f.r.candidate, legs: f.r.candidate.legs.map((l) => ({ walkBeforeMin: l.walkBeforeMin, rideMin: l.rideMin })) } };
-  const re = applyRealtime(bare, results, headways, sched);
-  // 단순화: 탄 버스는 시간표 탑승 시간대로 간다고 봄. walkBeforeMin을 -여유로 둬서 "지금(0분) 타는 버스"가 되게 함
-  const rest = Math.max(0, f.t / 60000 + b0.at + leg0.rideMin - now);
-  const id0 = f.r.candidate.legs[0].src?.find(([m]) => Math.abs(m - b0.at) < 1e-6)?.[1];
-  re.candidate.legs[0] = { walkBeforeMin: -BOARD_MARGIN_MIN, nextBusesMin: [0], rideMin: rest, ...(id0 ? { src: [[0, id0]] as [number, string][] } : {}) };
-  const eta = arrivalMin(re.candidate);
-  return eta ? { ...re, eta } : fixed;
 }
 // 한눈에 보는 막대: 걷기(회색) · 기다림(옅은색) · 버스(귤색, 번호) 길이를 시간에 비례해서
 function Bar({ r }: { r: Ranked }) {
@@ -211,7 +196,8 @@ export default function Home() {
   const [walkMin, setWalkMin] = useState<number | null>(null); // 버스 없이 걸어가는 시간(3km 안)
   const [walkPath, setWalkPath] = useState<Pt[] | undefined>(undefined);
   const [pin, setPin] = useState(''); // "이 경로로 갈게요"로 고른 경로: 갱신 때 이 경로만 보여준다
-  const frozenRef = useRef<{ r: Ranked; t: number } | null>(null); // 탄 버스가 지나간 순간의 고른 경로
+  const sinceRef = useRef(0); // 따라가기를 누른 시각(ms): 그때부터 정류장으로 걸어간다고 봄
+  const frozenRef = useRef<Frozen | null>(null); // 탄 것으로 본 순간의 고른 경로와 탄 구간 수
   const routesRef = useRef<Ranked[]>([]), selRef = useRef(''), pinRef = useRef(''), heldRef = useRef(false), atRef = useRef<Date | null>(null);
   routesRef.current = routes;
   selRef.current = selKey;
@@ -338,15 +324,28 @@ export default function Home() {
       // 단순화: 고정된 동안 시각은 마지막 계산 그대로, 다른 경로가 더 빨라져도 바꾸지 않음
       const next = shown.slice(0, 3), cur = routesRef.current;
       if (refresh && pinRef.current) {
-        // "이 경로로 갈게요"를 누른 경로만 따라간다. 타려던 버스가 정류장을 지나가면(탔거나 놓침) 새 계산은 다음 차가 되므로 그때부터는 화면을 고정한다.
-        const old = cur.find((r) => routeKey(r) === pinRef.current), fresh = ranked.find((r) => routeKey(r) === pinRef.current);
-        const boardAt = (r: typeof old, t: Date | null) => (r?.eta && t ? t.getTime() / 60000 + r.eta.boards[0].at : NaN);
-        // 고른 경로는 맨 위에, 그 아래에는 새로 찾은 경로들을 그대로 보여준다
-        let top = fresh;
-        if (heldRef.current || !fresh || boardAt(fresh, new Date()) > boardAt(old, atRef.current) + 3) {
-          if (!frozenRef.current && old && atRef.current) frozenRef.current = { r: old, t: atRef.current.getTime() };
-          const f = frozenRef.current;
-          top = f ? riding(f, results, headways, sched) : old;
+        // "이 경로로 갈게요"를 누른 경로를 맨 위에, 그 아래에 새로 찾은 경로들. 타려던 버스가 지나가면 탄 것으로 보고 고정한다.
+        const nowMs = Date.now(), nowMin = nowMs / 60000, atMs = atRef.current?.getTime() ?? nowMs;
+        const old = cur.find((r) => routeKey(r) === pinRef.current), found = ranked.find((r) => routeKey(r) === pinRef.current);
+        const fresh = found && walking(found, (nowMs - (sinceRef.current || atMs)) / 60000);
+        const board = (r: Ranked | undefined, ms: number, j: number) => (r?.eta?.boards[j] ? ms / 60000 + r.eta.boards[j].at : NaN);
+        const unpin = () => { pinRef.current = ''; frozenRef.current = null; setPin(''); setHeld(false); setRoutes(next); setAt(new Date()); };
+        // 도착하고 30분이 지나면 따라가기를 끝낸다
+        if (old?.eta && nowMs > atMs + (old.eta.min + 30) * 60000) return unpin();
+        let f = frozenRef.current, top: Ranked | undefined;
+        if (!f) {
+          if (fresh && !(old && passed(board(old, atMs, 0), board(fresh, nowMs, 0), nowMin))) top = fresh;
+          // 고른 경로가 새 계산에서 잠깐 빠졌는데(ODsay 실패·데이터 갱신) 버스가 아직 올 때가 아니면, 탔다고 보지 않고 그대로 둔다
+          else if (!fresh && old && board(old, atMs, 0) - nowMin > 2) top = shift(old, (nowMs - atMs) / 60000);
+          else if (old) f = frozenRef.current = { r: old, t: atMs, k: 1 };
+        }
+        if (f) {
+          top = riding(f, nowMs, results, headways, sched);
+          // 갈아탈 버스도 곧 올 차였는데 지나갔으면 그 버스도 탄 것으로 본다 (환승 뒤 다음 차로 바뀌지 않게)
+          if (f.k < f.r.rides.length && passed(board(old, atMs, f.k), board(top, nowMs, f.k), nowMin)) {
+            f = frozenRef.current = { r: old!, t: atMs, k: f.k + 1 };
+            top = riding(f, nowMs, results, headways, sched);
+          }
           setHeld(true);
         }
         setRoutes([...(top ? [top] : []), ...next.filter((r) => routeKey(r) !== pinRef.current)]);
@@ -372,7 +371,8 @@ export default function Home() {
     if (p) {
       // 고른 경로를 그 경로를 찾을 때의 출발지(현재 위치 포함)로 되살린다. 버스 안에서 다시 열어도 같은 경로를 따라간다
       pinBoot.current = true;
-      frozenRef.current = p.held ? { r: p.r, t: p.t } : null;
+      frozenRef.current = p.held ? { r: p.r, t: p.t, k: p.k ?? 1 } : null;
+      sinceRef.current = p.since ?? p.t;
       setFrom(p.from); setTo(p.to); setRoutes([p.r]); setAt(new Date(p.t)); setPin(routeKey(p.r)); setSelKey(routeKey(p.r)); setHeld(p.held);
     } else if (t) { setFrom(t.from); setTo(t.to); }
     restored.current = true;
@@ -389,7 +389,7 @@ export default function Home() {
   useEffect(() => {
     try {
       const r = frozenRef.current?.r ?? routes.find((x) => routeKey(x) === pin);
-      if (pin && r && from && to && at) localStorage.setItem(PINNED, JSON.stringify({ from, to, r, t: frozenRef.current?.t ?? at.getTime(), held }));
+      if (pin && r && from && to && at) localStorage.setItem(PINNED, JSON.stringify({ from, to, r, t: frozenRef.current?.t ?? at.getTime(), held, k: frozenRef.current?.k ?? 1, since: sinceRef.current }));
       else if (restored.current && !pinBoot.current) localStorage.removeItem(PINNED);
     } catch {}
   }, [pin, held, at]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -457,9 +457,9 @@ export default function Home() {
                 const l = r.candidate.legs[j], b = r.eta?.boards[j];
                 const [on, side] = splitStop(x.from);
                 const prevOff = j ? splitStop(r.rides[j - 1].to)[0] : '';
-                const riding = held && key === pin && j === 0;
+                const rode = held && key === pin ? (r.rode ?? 1) : 0, onBus = j === rode - 1, past = j < rode - 1;
                 const ended = j > 0 && !r.eta && !l.timetableMin && !l.intervalMin;
-                const time = riding ? <span className="when live">탄 버스</span>
+                const time = onBus ? <span className="when live">탄 버스</span> : past ? <span className="when off">지나옴</span>
                   // 모두 "지금부터" 몇 분 뒤 (사용자 요청 2026-11-02: 시각 대신 "N시간 M분 뒤 도착")
                   : b ? (b.how === 'realtime' ? <span className="when live">{dur(Math.max(0, b.at))} 뒤 도착<small>실시간</small></span>
                     : b.how === 'interval' ? <span className="when">약 {dur(b.at)} 뒤 도착<small>배차 어림</small></span>
@@ -476,9 +476,9 @@ export default function Home() {
                         <div className="chips">{chips(boardNo(r, j) ? [boardNo(r, j)!] : busNumbers(x.busNos), opened.includes(`${key}:${j}`), () => setOpened([...opened, `${key}:${j}`]))}</div>
                         {time}
                       </div>
-                      {j > 0 && b && b.how !== 'interval' && <div className="muted note">환승 여유 {Math.round(b.at - b.atStop)}분</div>}
+                      {j > 0 && j >= rode && b && b.how !== 'interval' && <div className="muted note">환승 여유 {Math.round(b.at - b.atStop)}분</div>}
                     </li>
-                    <li className={`ride${j ? ' later' : ''}`}>{x.stopsBy?.[boardIdx(r, j)] ?? x.stops}개 정류장 · {riding ? `내릴 때까지 약 ${Math.round(l.rideMin)}분` : `${Math.round(l.rideMin)}분 타요`}</li>
+                    <li className={`ride${j ? ' later' : ''}`}>{x.stopsBy?.[boardIdx(r, j)] ?? x.stops}개 정류장 · {past ? '지나옴' : onBus ? (l.rideMin >= 1 ? `내릴 때까지 약 ${Math.round(l.rideMin)}분` : '내렸어요') : `${Math.round(l.rideMin)}분 타요`}</li>
                     {j === r.rides.length - 1 && <li className="stop off later"><b>{splitStop(x.to)[0]}</b><span className="muted"> 하차</span></li>}
                   </Fragment>
                 );
@@ -490,7 +490,7 @@ export default function Home() {
               {r.eta && <button type="button" className={pin === key ? 'follow on' : 'follow'} onClick={(e) => {
                 e.stopPropagation();
                 if (pin === key) { pinRef.current = ''; heldRef.current = false; frozenRef.current = null; routesRef.current = []; setPin(''); setHeld(false); plan(true); }
-                else ((frozenRef.current = null), setHeld(false), setPin(key), setSelKey(key), setRoutes([r, ...routes.filter((x) => routeKey(x) !== key)]));
+                else ((frozenRef.current = null), (sinceRef.current = Date.now()), setHeld(false), setPin(key), setSelKey(key), setRoutes([r, ...routes.filter((x) => routeKey(x) !== key)]));
               }}>{pin === key ? '따라가기 그만' : '이 경로로 갈게요'}</button>}
             </div>
           </article>
