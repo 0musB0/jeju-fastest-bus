@@ -54,7 +54,7 @@ function Bar({ r }: { r: Ranked }) {
   segs.push({ k: 'walk', m: r.candidate.walkAfterMin });
   return (
     <div className="bar" aria-hidden="true">
-      {segs.filter((x) => x.m >= 1).map((x, n) => <span key={n} className={`b-${x.k}`} style={{ flexGrow: x.m }}>{x.k === 'bus' ? x.t : x.m >= 4 ? Math.round(x.m) : ''}</span>)}
+      {segs.filter((x) => x.m >= 1).map((x, n) => <span key={n} className={`b-${x.k}`} style={{ flexGrow: x.m, ...(x.k === 'bus' ? { minWidth: `${(x.t?.length ?? 0) * 9 + 12}px` } : {}) }}>{x.k === 'bus' ? x.t : x.m >= 4 ? Math.round(x.m) : ''}</span>)}
     </div>
   );
 }

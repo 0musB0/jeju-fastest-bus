@@ -136,7 +136,7 @@ details.box summary { cursor: pointer; }
 .tl.short .later { display: none; }
 .when small { display: inline; margin-left: 4px; }
 .bar { display: flex; gap: 2px; height: 22px; margin: 0 0 12px; border-radius: 6px; overflow: hidden; font-size: 12px; line-height: 22px; text-align: center; }
-.bar span { flex-basis: 0; min-width: 18px; overflow: hidden; white-space: nowrap; }
+.bar span { flex-basis: 0; min-width: 18px; overflow: hidden; white-space: nowrap; text-overflow: clip; }
 .bar .b-walk { background: var(--line); color: var(--muted); }
 .bar .b-wait { background: var(--accent-bg); color: var(--accent); }
-.bar .b-bus { min-width: 34px; background: var(--accent); color: #fff; font-family: 'Jua', sans-serif; font-size: 14px; }
+.bar .b-bus { background: var(--accent); color: #fff; font-family: 'Jua', sans-serif; font-size: 14px; }
