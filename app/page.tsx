@@ -81,6 +81,8 @@ const chips = (nos: string[], open: boolean, onOpen: () => void) => [
   ...(open ? nos : nos.slice(0, 4)).map((n) => <span key={n} className="chip">{n}</span>),
   ...(!open && nos.length > 4 ? [<button key="+" type="button" className="chip more" aria-label={`버스 ${nos.length - 4}개 더 보기`} onClick={(e) => { e.stopPropagation(); onOpen(); }}>+{nos.length - 4}</button>] : []),
 ];
+// 걸리는 시간: 60분부터는 "2시간 30분"
+const dur = (m: number) => { const t = Math.round(m), h = Math.floor(t / 60); return h ? `${h}시간${t % 60 ? ` ${t % 60}분` : ''}` : `${t}분`; };
 const busNumbers = (nos: string[]) => [...new Set(nos.map((n) => n.replace(/\(.*\)/, '').replace(/-\d+$/, '').trim()))];
 // "하귀환승정류장(하귀하나로마트)" → ["하귀환승정류장", "하귀하나로마트"]. 괄호는 길 건너 같은 이름 정류장을 가리는 힌트라 작게 남긴다.
 const splitStop = (name: string) => {
@@ -427,7 +429,7 @@ export default function Home() {
           onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelKey('walk'); } }}>
           <div className="row" style={{ alignItems: 'flex-start' }}>
             <div style={{ flex: 1 }}><div className="board"><b>걸어가요</b></div></div>
-            <div className="arrive"><span className="eta">{walkMin}분</span><div className="muted">{kstClock(at!, walkMin!)} 도착</div></div>
+            <div className="arrive"><span className="eta">{dur(walkMin!)}</span><div className="muted">{kstClock(at!, walkMin!)} 도착</div></div>
           </div>
         </article>
       )}
@@ -441,8 +443,8 @@ export default function Home() {
             role="button" tabIndex={0} aria-pressed={i === sel && !walkSel} onClick={() => setSelKey(key)}
             onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelKey(key); } }}>
             <div className="head">
-              {r.eta ? <><span className="eta">{Math.round(r.eta.min)}분</span><span className="muted">{kstClock(at!, r.eta.min)} 도착</span></>
-                : <><span className="eta">{r.odsayMin}분</span><span className="muted">+ 대기</span></>}
+              {r.eta ? <><span className="eta">{dur(r.eta.min)}</span><span className="muted">{kstClock(at!, r.eta.min)} 도착</span></>
+                : <><span className="eta">{dur(r.odsayMin)}</span><span className="muted">+ 대기</span></>}
             </div>
             <div className="muted sub">걷기 {Math.round(walk)}분{r.fare ? ` · ${r.fare.toLocaleString()}원` : ''}{r.rides.length > 1 ? ` · 환승 ${r.rides.length - 1}번` : ''}</div>
             <Bar r={r} />
