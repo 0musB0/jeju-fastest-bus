@@ -324,7 +324,10 @@ export default function Home() {
       const detour = (r: (typeof ranked)[number]) => ranked.some((q) => q !== r && q.eta && r.eta && q.rides.length <= r.rides.length
         && q.rides[0].routeIds.some((id) => r.rides[0].routeIds.includes(id))
         && (q.rides.length < r.rides.length ? q.eta.min <= r.eta.min : q.eta.min < r.eta.min || (q.eta.min === r.eta.min && walkOf(q) < walkOf(r))));
-      const shown = ranked.filter((r) => !ended(r) && !detour(r));
+      // 도착 시각을 낼 수 없는 경로(갈아탈 버스가 지금 안 다님: 낮에 심야 3006번 등)는, 계산되는 경로가 하나라도 있으면 뺀다.
+      // 남겨 두면 첫 버스 칸에 "운행 버스 없음"처럼 엉뚱한 이유가 보였다 (신화월드 → 함덕, 2026-11-02)
+      const anyEta = ranked.some((r) => r.eta && !ended(r) && !detour(r));
+      const shown = ranked.filter((r) => !ended(r) && !detour(r) && (r.eta || !anyEta));
       if (!shown.some((r) => r.eta) && ranked.some(ended)) {
         setRoutes([]);
         setAt(null);
