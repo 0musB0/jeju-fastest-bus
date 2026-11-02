@@ -153,6 +153,7 @@ export default function Home() {
   const [opened, setOpened] = useState<string[]>([]); // 버스 번호를 다 펼친 경로
   const [selKey, setSelKey] = useState(''); // 고른 경로: 30초 갱신으로 순서가 바뀌어도 같은 경로를 따라간다
   const [held, setHeld] = useState(false); // 고른 경로가 갱신 결과에서 빠져 화면을 고정한 상태
+  const [walkMin, setWalkMin] = useState<number | null>(null); // 버스 없이 걸어가는 시간(3km 안)
   const [pin, setPin] = useState(''); // "이 경로로 갈게요"로 고른 경로: 갱신 때 이 경로만 보여준다
   const routesRef = useRef<Ranked[]>([]), selRef = useRef(''), pinRef = useRef(''), heldRef = useRef(false), atRef = useRef<Date | null>(null);
   routesRef.current = routes;
@@ -204,6 +205,7 @@ export default function Home() {
       let headways: Headways = {};
       let sched: Schedules = {};
       let trips: Trip[] = [];
+      let walkAll: number | null = null;
       try {
         const pathKey = (x: Route['rides'][number]) => `${x.routeIds[0]}:${x.stationId}:${x.stops}`;
         const q = new URLSearchParams({ q: rideKeys(odsay, true).slice(0, 30).join(','), later: rideKeys(odsay, false).slice(0, 30).join(','), stops: refresh ? '' : stopKeys(odsay).slice(0, 60).join(','),
@@ -215,6 +217,8 @@ export default function Home() {
         headways = r.headways ?? {};
         sched = { scheduled: r.scheduled, pending: r.pending, firstBus: r.firstBus };
         trips = r.trips ?? [];
+        walkAll = typeof r.walkAll === 'number' ? r.walkAll : null;
+        if (!refresh) setWalkMin(walkAll);
         // ODsay 경로 중 그 버스가 실제로 서지 않는 정류장에서 타거나 내리는 경로는 뺀다 (첫 검색에서 한 번)
         if (!refresh && r.stopsOk) odsay = odsayRef.current = odsay.filter((o) => onOurRoutes(o, r.stopsOk)).map((o) => withOurWalks(o, r.walkFrom, r.walkTo));
         // 지도 선은 첫 검색에서만 받는다 (갱신 응답은 빈 선). 구간 = 탈 정류장 > 내릴 정류장 + 노선
@@ -230,6 +234,7 @@ export default function Home() {
         setRtDown(Object.values(results).some((v) => !Array.isArray(v) && v.error !== '이 노선에 없는 정류장'));
       } catch {
         if (refresh) return; // 갱신 중 한 번 끊기면 이전 결과를 그대로 둔다
+        setWalkMin(null);
         setRtDown(true);
         /* 첫 검색: ODsay 경로만, 대기는 추정 불가로 표시 */
       }
@@ -238,7 +243,7 @@ export default function Home() {
       // 같은 버스·정류장 조합이면 우리 후보를 쓴다: 탑승 시간이 시간표 기준이고 가지 노선이 모두 묶여 있다.
       // ODsay 쪽을 남겼더니 ODsay의 긴 탑승 시간 때문에 바로 가는 355번이 아라초 환승 경로보다 뒤로 밀렸다 (2026-11-02)
       const byTime = [...odsay.filter((o) => !trips.some((t) => sameRide(o, t))), ...tripsToRoutes(trips, [])];
-      if (!byTime.length) return setMsg(odsayErr.current || '버스로 가는 경로가 없어요. 걸어가기 가까운 거리일 수 있어요.');
+      if (!byTime.length) return setMsg(odsayErr.current || (walkAll !== null ? `버스로 가는 경로가 없어요. 걸어서 ${walkAll}분이에요.` : '버스로 가는 경로가 없어요. 걸어가기 가까운 거리일 수 있어요.'));
       // 대기를 알 수 있는 후보가 먼저, 그 안에서 도착이 빠른 순. 모르면 이동 시간 순으로 맨 뒤.
       const ranked = byTime
         .map((r) => applyRealtime(r, results, headways, sched))
@@ -330,6 +335,12 @@ export default function Home() {
       {at && held && <p className="muted">타려던 버스가 정류장을 지나서, 탄 경로를 계속 보여드려요(시각은 {kstClock(at)} 계산 기준). 새로 찾으려면 출발지를 다시 고르세요.</p>}
       {at && pin && !held && <p className="muted">고른 경로만 따라가요. 타려던 버스가 지나가면 그때 계산으로 고정해요.</p>}
       {at && routes.length > 0 && rtDown && <p className="warn">실시간 버스 위치를 받지 못해 일부는 시간표로 계산했어요.</p>}
+      {at && walkMin !== null && routes.length > 0 && !pin && !held && (routes[0].eta ? walkMin <= routes[0].eta.min : true) && (
+        <article className="result best">
+          <b>걸어가는 게 더 빨라요</b>
+          <p>걸어서 <span className="num">{walkMin}분</span>, {kstClock(at, walkMin)} 도착. 아래 버스는 가장 빨라도 {routes[0].eta ? `${Math.round(routes[0].eta.min)}분` : '시간을 알 수 없어요'}.</p>
+        </article>
+      )}
       {from && to && routes[sel] && <RouteMap from={from} to={to} rides={routes[sel].rides} />}
       {routes.map((r, i) => {
         const key = routeKey(r);

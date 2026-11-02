@@ -1,12 +1,12 @@
 import { revalidateTag } from 'next/cache';
 import { headwayMin, parseBusLocation, stopsAway } from '@/lib/realtime';
-import { findTrips, indexData, maskOffShape, legPath, roughRide, type Station, type BusRoute, type RideMin, type Shapes } from '@/lib/direct';
+import { distM, findTrips, indexData, maskOffShape, legPath, roughRide, type Station, type BusRoute, type RideMin, type Shapes } from '@/lib/direct';
 import shapeData from '@/data/shapes.json';
 import stationList from '@/data/stations.json';
 import routeList from '@/data/routes.json';
 import timetableData from '@/data/timetable.json';
 import { arrivals, firstAt, kstDay, kstMinutes, offsetAt, type Timetable } from '@/lib/timetable';
-import { MIN_PER_STOP, WALK_M_PER_MIN } from '@/lib/config';
+import { MIN_PER_STOP, WALK_DETOUR, WALK_M_PER_MIN } from '@/lib/config';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { walkGraph, type Walker } from '@/lib/walk';
@@ -156,5 +156,12 @@ export async function GET(req: Request) {
     return res;
   };
   const walkFrom = walkMins(from, p.get('wf')), walkTo = walkMins(to, p.get('wt'));
-  return Response.json({ results, headways, scheduled, pending, firstBus, trips: out, paths, stopsOk, walkFrom, walkTo });
+  // 버스 없이 바로 걸어가는 시간 (3km 안만). 버스보다 빠르면 화면이 "걸어가세요"를 먼저 보여준다
+  let walkAll: number | undefined;
+  if (from && to && !p.get('lite') && distM(from, to) < 3000) {
+    const r = walker?.tree(from, 3000)?.to(to);
+    const m = r && isFinite(r.m) ? r.m : distM(from, to) * WALK_DETOUR;
+    walkAll = Math.round(m / WALK_M_PER_MIN);
+  }
+  return Response.json({ results, headways, scheduled, pending, firstBus, trips: out, paths, stopsOk, walkFrom, walkTo, walkAll });
 }
