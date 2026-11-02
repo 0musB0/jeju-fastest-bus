@@ -470,6 +470,7 @@ export default function Home() {
                     {l.walkBeforeMin > 0 && (j === 0 || on !== prevOff) && <li className={`walk${j ? ' later' : ''}`}>걸어서 {Math.round(l.walkBeforeMin)}분</li>}
                     <li className={`stop${j ? ' later' : ''}`}>
                       <b>{on}</b>{side && <span className="muted side"> {side} 쪽</span>}<span className="muted">{j ? ' 환승' : ' 승차'}</span>
+                      {x.toward && <div className="muted toward">{splitStop(x.toward)[0]} 방면</div>}
                       <div className="busbox">
                         <div className="chips">{chips(boardNo(r, j) ? [boardNo(r, j)!] : busNumbers(x.busNos), opened.includes(`${key}:${j}`), () => setOpened([...opened, `${key}:${j}`]))}</div>
                         {time}

@@ -100,7 +100,7 @@ export function tripsToRoutes(trips: Trip[], existing: Route[]): Route[] {
     const walkAfterMin = Math.round(t.walkAfterMin);
     return {
       candidate: { legs, walkAfterMin },
-      rides: t.legs.map((l, n) => ({ busNos: l.nos, routeIds: l.routeIds, stationId: l.fromId, from: l.fromName, to: l.toName, stops: l.stops, ...(l.stopsBy ? { stopsBy: l.stopsBy } : {}), fromPt: l.fromPt, toPt: l.toPt, path: l.path, walkPath: l.walkPath, ...(n === t.legs.length - 1 ? { walkAfterPath: t.walkAfterPath } : {}) })),
+      rides: t.legs.map((l, n) => ({ busNos: l.nos, routeIds: l.routeIds, stationId: l.fromId, from: l.fromName, to: l.toName, stops: l.stops, ...(l.stopsBy ? { stopsBy: l.stopsBy } : {}), ...(l.toward ? { toward: l.toward } : {}), fromPt: l.fromPt, toPt: l.toPt, path: l.path, walkPath: l.walkPath, ...(n === t.legs.length - 1 ? { walkAfterPath: t.walkAfterPath } : {}) })),
       fare: routeFare(t.legs.map((l) => { const f = l.nos.flatMap((n) => legFare(n, l.distM) ?? []); return f.length ? Math.max(...f) : null; }), 0),
       odsayMin: legs.reduce((s, l) => s + l.walkBeforeMin + l.rideMin, 0) + walkAfterMin,
     };

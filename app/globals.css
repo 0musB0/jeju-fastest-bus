@@ -140,3 +140,4 @@ details.box summary { cursor: pointer; }
 .bar .b-walk { background: var(--line); color: var(--muted); }
 .bar .b-wait { background: var(--accent-bg); color: var(--accent); }
 .bar .b-bus { background: var(--accent); color: #fff; font-family: 'Jua', sans-serif; font-size: 14px; }
+.toward { font-size: 13px; margin-top: 1px; }

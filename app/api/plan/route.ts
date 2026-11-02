@@ -137,6 +137,12 @@ export async function GET(req: Request) {
   }
   // lite = 30초 자동 갱신: 지도 선은 처음 받은 것을 화면이 그대로 쓴다
   // 한 구간에 묶인 노선마다 정류장 수가 다르다(급행 111은 8개, 같은 구간 212는 56개). 화면은 실제로 탈 버스의 수를 보여준다
+  // 어디 방면: 카카오맵처럼 탈 정류장 다음 정류장 이름 (길 건너 같은 이름 정류장과 헷갈리지 않게)
+  for (const t of trips) for (const l of t.legs) {
+    const s = routeById.get(l.routeIds[0])?.stops ?? [], i = s.indexOf(l.fromId);
+    const next = s.slice(i + 1).find((id) => stationName.get(id));
+    if (i >= 0 && next) l.toward = stationName.get(next);
+  }
   for (const t of trips) for (const l of t.legs) l.stopsBy = l.routeIds.map((id) => {
     const s = routeById.get(id)?.stops ?? [], i = s.indexOf(l.fromId), j = s.indexOf(l.toId, i + 1);
     return i >= 0 && j > i ? j - i : l.stops;
