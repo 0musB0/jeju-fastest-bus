@@ -153,9 +153,12 @@ export default function Home() {
   const [opened, setOpened] = useState<string[]>([]); // 버스 번호를 다 펼친 경로
   const [selKey, setSelKey] = useState(''); // 고른 경로: 30초 갱신으로 순서가 바뀌어도 같은 경로를 따라간다
   const [held, setHeld] = useState(false); // 고른 경로가 갱신 결과에서 빠져 화면을 고정한 상태
-  const routesRef = useRef<Ranked[]>([]), selRef = useRef('');
+  const [pin, setPin] = useState(''); // "이 경로로 갈게요"로 고른 경로: 갱신 때 이 경로만 보여준다
+  const routesRef = useRef<Ranked[]>([]), selRef = useRef(''), pinRef = useRef(''), heldRef = useRef(false), atRef = useRef<Date | null>(null);
   routesRef.current = routes;
   selRef.current = selKey;
+  pinRef.current = pin;
+  heldRef.current = held; atRef.current = at;
 
   const odsayErr = useRef('');
   const odsayRef = useRef<Route[] | null>(null); // 출발·도착이 같으면 ODsay 경로는 다시 부르지 않는다 (일일 한도)
@@ -264,11 +267,20 @@ export default function Home() {
       // 자동 갱신 때 고른 경로(안 골랐으면 1위)가 목록에서 빠지면 화면을 그대로 둔다: 그 버스를 이미 탔으면 정류장을 지나쳐 후보에서 빠지기 때문
       // 단순화: 고정된 동안 시각은 마지막 계산 그대로, 다른 경로가 더 빨라져도 바꾸지 않음
       const next = shown.slice(0, 3), cur = routesRef.current;
+      if (refresh && pinRef.current) {
+        // "이 경로로 갈게요"를 누른 경로만 따라간다. 타려던 버스가 정류장을 지나가면(탔거나 놓침) 새 계산은 다음 차가 되므로 그때부터는 화면을 고정한다.
+        const old = cur.find((r) => routeKey(r) === pinRef.current), fresh = ranked.find((r) => routeKey(r) === pinRef.current);
+        const boardAt = (r: typeof old, t: Date | null) => (r?.eta && t ? t.getTime() / 60000 + r.eta.boards[0].at : NaN);
+        if (heldRef.current || !fresh || boardAt(fresh, new Date()) > boardAt(old, atRef.current) + 3) return setHeld(true);
+        setRoutes([fresh]);
+        setAt(new Date());
+        return;
+      }
       const picked = cur[Math.max(0, cur.findIndex((r) => routeKey(r) === selRef.current))];
       if (refresh && picked && !next.some((r) => routeKey(r) === routeKey(picked))) return setHeld(true);
       setHeld(false);
       setRoutes(next);
-      if (!refresh) setSelKey('');
+      if (!refresh) (setSelKey(''), setPin(''));
       setAt(new Date());
       setMsg('');
       live.current = true;
@@ -315,7 +327,8 @@ export default function Home() {
           <span className="muted">{held ? '고른 경로 유지 중' : '30초마다 자동 갱신'}</span>
         </div>
       )}
-      {at && held && <p className="muted">고른 경로의 버스가 탈 정류장을 지나서, 탄 경로를 계속 보여드려요(시각은 {kstClock(at)} 계산 기준). 새로 찾으려면 출발지를 다시 고르세요.</p>}
+      {at && held && <p className="muted">타려던 버스가 정류장을 지나서, 탄 경로를 계속 보여드려요(시각은 {kstClock(at)} 계산 기준). 새로 찾으려면 출발지를 다시 고르세요.</p>}
+      {at && pin && !held && <p className="muted">고른 경로만 따라가요. 타려던 버스가 지나가면 그때 계산으로 고정해요.</p>}
       {at && routes.length > 0 && rtDown && <p className="warn">실시간 버스 위치를 받지 못해 일부는 시간표로 계산했어요.</p>}
       {from && to && routes[sel] && <RouteMap from={from} to={to} rides={routes[sel].rides} />}
       {routes.map((r, i) => {
@@ -368,7 +381,14 @@ export default function Home() {
               })}
               <li><b>{splitStop(r.rides.at(-1)!.to)[0]}</b>에서 내려요 <span className="muted">({r.rides.reduce((s, x) => s + x.stops, 0)}정류장)</span></li>
             </ol>
-            <div className="muted foot">걷기 {Math.round(walk)}분{r.fare ? ` · ${r.fare.toLocaleString()}원` : ''}</div>
+            <div className="muted foot row" style={{ justifyContent: 'space-between' }}>
+              <span>걷기 {Math.round(walk)}분{r.fare ? ` · ${r.fare.toLocaleString()}원` : ''}</span>
+              {r.eta && <button type="button" className={pin === key ? 'follow on' : 'follow'} onClick={(e) => {
+                e.stopPropagation();
+                if (pin === key) { pinRef.current = ''; heldRef.current = false; routesRef.current = []; setPin(''); setHeld(false); plan(true); }
+                else (setPin(key), setSelKey(key), setRoutes([r]));
+              }}>{pin === key ? '따라가기 그만' : '이 경로로 갈게요'}</button>}
+            </div>
           </article>
         );
       })}
