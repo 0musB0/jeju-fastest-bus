@@ -216,7 +216,7 @@ export default function Home() {
   // 출발·도착이 바뀌면 ODsay로 경로 후보를 받고, 30초마다 실시간·시간표만 다시 계산한다.
   // 따라가는 경로의 구간 키: 타기 전이면 모든 구간, 탄 뒤면 환승 구간만 (서버가 실시간을 먼저 조회)
   function pinKeys(): string[] {
-    const fk = pinRef.current || selRef.current; // 따라가는 경로 (눌러서 고른 카드 포함)
+    const fk = pinRef.current; // 따라가는 경로
     const r = frozenRef.current?.r ?? routesRef.current.find((x) => routeKey(x) === fk);
     // 탄 뒤에는 지금 탄 버스의 내릴 정류장도: 내 버스가 늦는지 실제 위치로 본다 (lib/follow.ts onBus)
     const on = frozenRef.current && r?.rides[frozenRef.current.k - 1];
@@ -227,11 +227,13 @@ export default function Home() {
     if (refresh && !live.current) return;
     const id = refresh ? reqId.current : ++reqId.current;
     const stale = () => id !== reqId.current;
+    // 고른 경로(누른 경로·카드로 고른 경로·탄 경로)는 새로 검색해도 사용자가 "따라가기 그만"이나 다른 카드를 누를 때까지 남긴다 (2026-11-03 사용자 요청)
+    const kept = pinRef.current ? frozenRef.current?.r ?? routesRef.current.find((x) => routeKey(x) === pinRef.current) : undefined;
     if (!refresh) {
       live.current = false;
       odsayRef.current = null;
-      setRoutes([]);
-      setAt(null);
+      setRoutes(kept ? [kept] : []);
+      if (!kept) setAt(null);
       setMsg(from && to ? '경로 계산 중...' : '');
     }
     if (!from || !to) return; // "바꾸기": 옛 결과를 지우고 끝
@@ -323,8 +325,8 @@ export default function Home() {
       const anyEta = ranked.some((r) => r.eta && !ended(r) && !detour(r));
       const shown = ranked.filter((r) => !ended(r) && !detour(r) && (r.eta || !anyEta));
       if (!shown.some((r) => r.eta) && ranked.some(ended)) {
-        setRoutes([]);
-        setAt(null);
+        setRoutes(kept ? [kept] : []);
+        if (!kept) setAt(null);
         const firsts = ranked.filter(ended).flatMap((r) => (r.firstBus !== undefined ? [r.firstBus] : []));
         return setMsg(`막차가 끝났어요.${firsts.length ? ` 내일 첫차는 ${clock12(Math.min(...firsts))}부터예요.` : ''}`);
       }
@@ -333,11 +335,12 @@ export default function Home() {
       // 고른 경로가 빠지는 건 보통 그 버스를 이미 타서 정류장을 지났기 때문이다. 예전에는 그때 화면을 마지막 계산 그대로 멈췄는데,
       // 탄 뒤에도 버스 위치·갈아탈 버스를 계속 실시간으로 다시 계산한다 (사용자 요청 2026-11-03)
       const picked = cur[Math.max(0, cur.findIndex((r) => routeKey(r) === selRef.current))];
-      const lost = !!picked && !next.some((r) => routeKey(r) === routeKey(picked));
-      if (refresh && lost && !pinRef.current && !selRef.current) setSelKey((selRef.current = routeKey(picked))); // 같은 노선 다음 차가 다시 보여도 계속 따라가게 고른 것으로
-      const fk = pinRef.current || (refresh ? selRef.current : '');
-      if (frozenRef.current && routeKey(frozenRef.current.r) !== fk) frozenRef.current = null; // 다른 카드를 고르면 새로 따라감
-      if (refresh && fk) {
+      const lost = !!picked && !shown.some((r) => routeKey(r) === routeKey(picked)); // 4위 밖으로 밀린 건 빠진 게 아님
+      // 카드를 눌러 보던(또는 1위) 경로가 빠지면 그 버스를 탄 것으로 보고 따라가기로 바꾼다 ("따라가기 그만"으로 끔).
+      // 카드 누르기는 지도에 보여줄 경로 고르기일 뿐이라 따라가는 경로를 바꾸지 않는다: 다른 카드를 보다가 내 경로 카드를 누르면 지도가 내 경로로 돌아온다
+      if (refresh && lost && !pinRef.current) { pinRef.current = routeKey(picked); setPin(pinRef.current); sinceRef.current ||= Date.now(); }
+      const fk = pinRef.current;
+      if (fk) {
         // "이 경로로 갈게요"를 누른 경로를 맨 위에, 그 아래에 새로 찾은 경로들. 타려던 버스가 지나가면 탄 것으로 보고 고정한다.
         const nowMs = Date.now(), nowMin = nowMs / 60000, atMs = atRef.current?.getTime() ?? nowMs;
         const old = cur.find((r) => routeKey(r) === fk), found = ranked.find((r) => routeKey(r) === fk);
@@ -364,11 +367,13 @@ export default function Home() {
         }
         setRoutes([...(top ? [top] : []), ...next.filter((r) => routeKey(r) !== fk)]);
         setAt(new Date());
+        setMsg('');
+        live.current = true;
         return;
       }
       setHeld(false);
       setRoutes(next);
-      if (!refresh) (setSelKey(''), setPin(''), (frozenRef.current = null));
+      if (!refresh) setSelKey('');
       setAt(new Date());
       setMsg('');
       live.current = true;
@@ -377,7 +382,7 @@ export default function Home() {
     }
   }
 
-  const restored = useRef(false), pinBoot = useRef(false), lastTo = useRef<Place | null>(null);
+  const restored = useRef(false), pinBoot = useRef(false);
   useEffect(() => {
     const p = loadPinned(), t = loadTrip();
     if (p) {
@@ -391,16 +396,11 @@ export default function Home() {
   }, []);
   useEffect(() => {
     if (restored.current) try { sessionStorage.setItem(SAVED, JSON.stringify({ from, to })); } catch {}
-    const sameTo = lastTo.current === to;
-    lastTo.current = to;
     // 되살린 고른 경로는 새로 찾지 않고 갱신만 한다 (새로 찾으면 고른 경로가 풀림)
     if (pinBoot.current) {
       if (pin) (pinBoot.current = false), (live.current = true), plan(true); // 첫 렌더(아직 pin 전)에는 아무것도 안 함: plan()이 되살린 경로를 지움
       return;
     }
-    // 따라가는 중에 "현재 위치"만 다시 받으면(도착지 그대로) 새 검색이 아니다: 고른 경로를 유지하고 새 위치로 갱신만 한다.
-    // 예전에는 새 검색으로 처리해 따라가기가 풀렸다 (2026-11-03 사용자 실측)
-    if ((pinRef.current || selRef.current || frozenRef.current) && from?.name === '현재 위치' && sameTo) return void plan(true);
     plan();
   }, [from, to]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
