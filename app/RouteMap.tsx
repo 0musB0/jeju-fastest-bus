@@ -137,37 +137,57 @@ export function PickMap({ onPick }: { onPick: (p: { name: string; address?: stri
   const box = useRef<HTMLDivElement>(null);
   const [spot, setSpot] = useState<{ name: string; address?: string; lat: number; lng: number } | null>(null);
   const [err, setErr] = useState('');
+  const me = useRef<Pt | null>(null); // 내 위치 (GPS, 지도에 파란 점)
+  const pickRef = useRef<((p: Pt, pan?: boolean) => void) | null>(null);
 
   useEffect(() => {
     if (!KEY) return;
+    let watch: number | undefined, alive = true;
     loadSdk().then((kakao) => {
-      if (!box.current) return;
+      if (!alive || !box.current) return;
       const { maps } = kakao;
-      const map = new maps.Map(box.current, { center: new maps.LatLng(JEJU_CENTER.lat, JEJU_CENTER.lng), level: 9 });
+      const ll = (p: Pt) => new maps.LatLng(p.lat, p.lng);
+      const map = new maps.Map(box.current, { center: ll(JEJU_CENTER), level: 9 });
       map.setMaxLevel(10); // 제주 섬 하나가 다 보이는 데까지만 멀어짐
-      // 지금 위치가 제주면 거기서 시작
-      navigator.geolocation?.getCurrentPosition((p) => {
-        const me = { lat: p.coords.latitude, lng: p.coords.longitude };
-        if (inJeju(me)) (map.setCenter(new maps.LatLng(me.lat, me.lng)), map.setLevel(5));
-      }, () => {}, { timeout: 5000, maximumAge: 60_000 });
-      // 고른 곳 = 감귤 로고 핀 (기본 파란 마커 대신)
+      // 고른 곳 = 감귤 로고 핀 (기본 파란 마커 대신), 내 위치 = 파란 점
       const marker = new maps.CustomOverlay({ yAnchor: 1, zIndex: 3, content: '<img class="tangerine" src="/icon.svg" alt="고른 곳">' });
+      const dot = new maps.CustomOverlay({ zIndex: 2, content: '<div class="me-dot" aria-label="내 위치"></div>' });
       const geocoder = new maps.services.Geocoder();
-      maps.event.addListener(map, 'click', (e: Kakao) => {
-        const p = { lat: e.latLng.getLat(), lng: e.latLng.getLng() };
+      const pick = (p: Pt, pan = false) => {
         if (!inJeju(p)) return setErr('제주 안에서 골라 주세요');
         setErr('');
-        marker.setPosition(e.latLng);
+        marker.setPosition(ll(p));
         marker.setMap(map);
+        if (pan) (map.setLevel(4), map.panTo(ll(p)));
         setSpot({ name: '지도에서 고른 곳', ...p });
         geocoder.coord2Address(p.lng, p.lat, (res: Kakao[], status: string) => {
           const a = status === maps.services.Status.OK ? res[0] : null;
           const name = a?.road_address?.building_name || a?.road_address?.address_name || a?.address?.address_name;
           if (name) setSpot({ name, address: a?.address?.address_name, ...p });
         });
-      });
+      };
+      pickRef.current = pick;
+      maps.event.addListener(map, 'click', (e: Kakao) => pick({ lat: e.latLng.getLat(), lng: e.latLng.getLng() }));
+      // 내 위치를 계속 받아 파란 점으로. 처음 받은 위치가 제주면 거기서 시작
+      let first = true;
+      watch = navigator.geolocation?.watchPosition((g) => {
+        const p = { lat: g.coords.latitude, lng: g.coords.longitude };
+        me.current = p;
+        dot.setPosition(ll(p));
+        dot.setMap(map);
+        if (first && inJeju(p)) (map.setCenter(ll(p)), map.setLevel(5));
+        first = false;
+      }, () => {}, { enableHighAccuracy: true, timeout: 20_000, maximumAge: 10_000 });
     }).catch((e) => setErr(e.message));
+    return () => { alive = false; if (watch !== undefined) navigator.geolocation.clearWatch(watch); };
   }, []);
+
+  // "내 위치로": 지도를 내 위치로 옮기고 그곳을 고른다
+  const toMe = () => {
+    if (me.current) return pickRef.current?.(me.current, true);
+    setErr('내 위치를 받는 중이에요. 위치 권한을 허용했는지 확인해 주세요.');
+    navigator.geolocation?.getCurrentPosition((g) => { me.current = { lat: g.coords.latitude, lng: g.coords.longitude }; pickRef.current?.(me.current, true); }, () => setErr('내 위치를 받지 못했어요. 위치 권한을 확인해 주세요.'), { enableHighAccuracy: true, timeout: 10_000 });
+  };
 
   if (!KEY) return <p className="warn">지도를 쓸 수 없어요</p>;
   return (
@@ -177,7 +197,12 @@ export function PickMap({ onPick }: { onPick: (p: { name: string; address?: stri
         <svg viewBox="0 0 120 28" width="96" height="22" aria-hidden="true"><path d="M0 24 Q30 20 46 10 Q60 2 74 10 Q90 20 120 24Z" fill="currentColor" opacity=".85" /><path d="M0 26 q7.5-3 15 0 t15 0 t15 0 t15 0 t15 0 t15 0 t15 0 t15 0" fill="none" stroke="var(--green)" strokeWidth="1.6" /></svg>
         <span>제주 어디로 갈까요?</span>
       </div>
-      <div ref={box} className="map" role="application" aria-label="지도를 눌러 위치 고르기" />
+      <div className="pick-wrap">
+        <div ref={box} className="map" role="application" aria-label="지도를 눌러 위치 고르기" />
+        <button type="button" className="to-me" onClick={toMe} aria-label="내 위치로" title="내 위치로">
+          <svg width="20" height="20" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="3" fill="currentColor" /><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" strokeWidth="1.5" /><path d="M8 0v2.5M8 13.5V16M0 8h2.5M13.5 8H16" stroke="currentColor" strokeWidth="1.5" /></svg>
+        </button>
+      </div>
       <div className="row">
         <span className="muted">{spot ? spot.name : '지도를 눌러 감귤을 꽂아 보세요'}</span>
         <button className="primary" disabled={!spot} onClick={() => spot && onPick(spot)}>이 위치로</button>
