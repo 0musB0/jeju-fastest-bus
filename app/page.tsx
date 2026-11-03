@@ -195,6 +195,8 @@ export default function Home() {
   const [held, setHeld] = useState(false); // 고른 경로가 갱신 결과에서 빠져 화면을 고정한 상태
   const [walkMin, setWalkMin] = useState<number | null>(null); // 버스 없이 걸어가는 시간(3km 안)
   const [walkPath, setWalkPath] = useState<Pt[] | undefined>(undefined);
+  const [pos, setPos] = useState<Record<string, Record<number, Pt & { name: string }>>>({}); // 따라가는 구간 버스 위치 (남은 정류장 수 → 정류장)
+  const busAt = (r: Ranked) => (r.bus ? pos[r.bus.key]?.[r.bus.left] : undefined); // 탄 버스가 지금 있는 정류장
   const [pin, setPin] = useState(''); // "이 경로로 갈게요"로 고른 경로: 갱신 때 이 경로만 보여준다
   const sinceRef = useRef(0); // 따라가기를 누른 시각(ms): 그때부터 정류장으로 걸어간다고 봄
   const frozenRef = useRef<Frozen | null>(null); // 탄 것으로 본 순간의 고른 경로와 탄 구간 수
@@ -267,6 +269,7 @@ export default function Home() {
         const r = await fetch(`/api/plan?${q}`).then((r) => r.json());
         results = r.results ?? {};
         headways = r.headways ?? {};
+        setPos(r.pos ?? {});
         sched = { scheduled: r.scheduled, pending: r.pending, firstBus: r.firstBus };
         trips = r.trips ?? [];
         walkAll = typeof r.walkAll === 'number' ? r.walkAll : null;
@@ -445,7 +448,7 @@ export default function Home() {
         </article>
       )}
       {from && to && walkSel && <RouteMap from={from} to={to} rides={[]} walkPath={walkPath} />}
-      {from && to && !walkSel && routes[sel] && <RouteMap from={from} to={to} rides={routes[sel].rides} />}
+      {from && to && !walkSel && routes[sel] && <RouteMap from={from} to={to} rides={routes[sel].rides} bus={busAt(routes[sel])} />}
       {routes.map((r, i) => {
         const key = routeKey(r);
         const walk = r.candidate.legs.reduce((s, l) => s + l.walkBeforeMin, r.candidate.walkAfterMin);
@@ -486,7 +489,7 @@ export default function Home() {
                       </div>
                       {j > 0 && j >= rode && b && b.how !== 'interval' && <div className="muted note">환승 여유 {Math.round(b.at - b.atStop)}분</div>}
                     </li>
-                    <li className={`ride${j ? ' later' : ''}`}>{x.stopsBy?.[boardIdx(r, j)] ?? x.stops}개 정류장 · {past ? '지나옴' : onBus ? (l.rideMin >= 1 ? `내릴 때까지 약 ${Math.round(l.rideMin)}분` : '내렸어요') : `${Math.round(l.rideMin)}분 타요`}</li>
+                    <li className={`ride${j ? ' later' : ''}`}>{onBus && busAt(r) ? `지금 ${busAt(r)!.name} · 내릴 곳까지 ${r.bus!.left}정류장 · ` : `${x.stopsBy?.[boardIdx(r, j)] ?? x.stops}개 정류장 · `}{past ? '지나옴' : onBus ? (l.rideMin >= 1 ? `내릴 때까지 약 ${Math.round(l.rideMin)}분` : '내렸어요') : `${Math.round(l.rideMin)}분 타요`}</li>
                     {j === r.rides.length - 1 && <li className="stop off later"><b>{splitStop(x.to)[0]}</b><span className="muted"> 하차</span></li>}
                   </Fragment>
                 );
