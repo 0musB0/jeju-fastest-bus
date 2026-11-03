@@ -1,4 +1,4 @@
-import { MIN_PER_STOP, SLOW_M } from './config.ts';
+import { MIN_PER_STOP, RUSH_RIDE, SLOW_M } from './config.ts';
 // 시간표: bus.jeju.go.kr의 표(주요 정류장 몇 곳의 시각)를 BIS 노선(ID)별로 바꾸고, 정류장 도착 시각을 계산한다. 외부 호출 없음.
 // 요일: 표 제목("평일", "토·공휴일")과 행 비고("토,공휴일 운행 안함", "…(평일)")로 운행마다 요일을 붙인다. 나머지는 매일 운행으로 봄. 동절기 대체 행은 무시함.
 
@@ -240,3 +240,6 @@ export function kstMinutes(now: Date): number {
     .map(Number);
   return h * 60 + m;
 }
+
+// 지금 탈 때의 탑승 시간 배율: 평일 퇴근 시간만 1보다 크다 (lib/config.ts RUSH_RIDE)
+export const rideFactor = (now: Date) => (kstDay(now) === WEEKDAY ? RUSH_RIDE[Math.floor(kstMinutes(now) / 60)] ?? 1 : 1);

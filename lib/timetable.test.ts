@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { arrivals, buildEntry, firstAt, kstDay, kstMinutes, offsetAt, parseTime, sameStop, tripsFor } from './timetable.ts';
+import { rideFactor, arrivals, buildEntry, firstAt, kstDay, kstMinutes, offsetAt, parseTime, sameStop, tripsFor } from './timetable.ts';
 
 test('시각 칸 읽기', () => {
   assert.equal(parseTime('5:50(출발)'), 350);
@@ -161,4 +161,11 @@ test('기준점 사이는 거리로 나눈다 (600번: 정존마을까지 촘촘
   const e = buildEntry([[[0, 600], [9, 655]]], cum)!;
   assert.ok(offsetAt(e.p, 4) < 12, `정존마을 ${offsetAt(e.p, 4)}분`); // 순번으로는 24분
   assert.ok(offsetAt(e.p, 7) - offsetAt(e.p, 4) > 35); // 정존마을 → 예래입구 31.6km
+});
+
+test('rideFactor: 평일 퇴근 시간만 배율', () => {
+  assert.equal(rideFactor(new Date('2026-11-03T08:30:00Z')), 1.1); // 화 17:30 KST
+  assert.equal(rideFactor(new Date('2026-11-03T09:59:00Z')), 1.05); // 화 18:59
+  assert.equal(rideFactor(new Date('2026-11-03T01:00:00Z')), 1); // 화 10시
+  assert.equal(rideFactor(new Date('2026-10-31T08:30:00Z')), 1); // 토 17:30
 });
