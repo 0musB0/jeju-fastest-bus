@@ -143,3 +143,11 @@ details.box summary { cursor: pointer; }
 .bar .b-wait { background: var(--accent-bg); color: var(--accent); }
 .bar .b-bus { background: var(--accent); color: #fff; font-family: 'Jua', sans-serif; font-size: 14px; }
 .toward { font-size: 13px; margin-top: 1px; }
+/* 지도 버튼(접힌 지도 아이콘)과 지도에서 고르기: 모래 테두리, 한라산 띠, 따뜻한 색 지도, 감귤 핀 */
+.mapbtn { flex: none; width: 48px; align-self: stretch; padding: 0; display: grid; place-items: center; color: var(--accent); border-color: var(--accent); background: var(--card); }
+.mapbtn.on { background: var(--accent); color: #fff; }
+.pickmap { margin-top: 8px; padding: 8px 10px 4px; border-radius: 14px; background: var(--accent-bg); border: 1px solid var(--line); }
+.pick-head { display: flex; align-items: flex-end; gap: 8px; color: var(--ink); font-family: 'Jua', sans-serif; font-size: 17px; margin-bottom: 6px; }
+.pickmap .map { margin-bottom: 8px; border: 2px solid var(--accent); }
+.pickmap .map img:not(.tangerine) { filter: sepia(.18) saturate(1.15); }
+.tangerine { display: block; width: 36px; height: 36px; filter: drop-shadow(0 2px 2px rgba(0,0,0,.35)); }

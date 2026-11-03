@@ -6,7 +6,7 @@ import { passed, riding, shift, walking, type Followed, type Frozen } from '@/li
 import { parseOdsay, type Pt, type Route } from '@/lib/odsay';
 import { applyRealtime, tripsToRoutes, sameRide, rideKeys, stopKeys, onOurRoutes, withOurWalks, type Headways, type PlanResults, type Schedules } from '@/lib/realtime';
 import type { Trip } from '@/lib/direct';
-import RouteMap from './RouteMap';
+import RouteMap, { PickMap } from './RouteMap';
 
 type Place = { name: string; address?: string; lat: number; lng: number };
 type Ranked = Followed;
@@ -92,6 +92,7 @@ function PlacePicker({ label, value, onPick, allowHere, favorites }: { label: st
   const isFav = !!value && favs.some((f) => sameSpot(f, value));
   const [list, setList] = useState<Place[]>([]);
   const [msg, setMsg] = useState('');
+  const [onMap, setOnMap] = useState(false); // 지도에서 고르기 열림
 
   async function search(e: React.FormEvent) {
     e.preventDefault();
@@ -147,6 +148,10 @@ function PlacePicker({ label, value, onPick, allowHere, favorites }: { label: st
           <form onSubmit={search} className="row" style={{ marginTop: 6 }}>
             <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={allowHere ? '출발 장소 검색' : ASKS[ask]} enterKeyHint="search" />
             <button className="primary" disabled={!q.trim()}>검색</button>
+            {/* 접힌 지도 모양 아이콘: 지도에서 고르기 */}
+            <button type="button" className={`mapbtn${onMap ? ' on' : ''}`} onClick={() => setOnMap(!onMap)} aria-expanded={onMap} aria-label={onMap ? '지도 닫기' : '지도에서 고르기'} title="지도에서 고르기">
+              <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6.5l6-2.5 6 2.5 6-2.5v13.5l-6 2.5-6-2.5-6 2.5z" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" /><path d="M9 4v13.5M15 6.5V20" stroke="currentColor" strokeWidth="1.7" /></svg>
+            </button>
           </form>
           {allowHere && (
             <button className="ghost" onClick={here} style={{ marginTop: 6 }}>
@@ -154,6 +159,7 @@ function PlacePicker({ label, value, onPick, allowHere, favorites }: { label: st
               현재 위치 사용
             </button>
           )}
+          {onMap && <PickMap onPick={(p) => { onPick(p); setOnMap(false); }} />}
           {favorites && favs.length > 0 && !list.length && (
             <div className="favs">
               {favs.map((f) => (

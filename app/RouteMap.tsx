@@ -11,7 +11,7 @@ let sdk: Promise<Kakao> | null = null;
 function loadSdk(): Promise<Kakao> {
   sdk ??= new Promise((resolve, reject) => {
     const s = document.createElement('script');
-    s.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${KEY}&autoload=false`;
+    s.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${KEY}&libraries=services&autoload=false`;
     s.onload = () => (window as Kakao).kakao.maps.load(() => resolve((window as Kakao).kakao));
     s.onerror = () => { sdk = null; reject(new Error('지도를 불러오지 못했어요')); };
     document.head.appendChild(s);
@@ -121,4 +121,61 @@ export function RouteLine({ path }: { path: Pt[] }) {
 
   if (!KEY || path.length < 2) return null;
   return err ? <p className="warn">{err}</p> : <div ref={box} className="map" role="img" aria-label="노선 지도" />;
+}
+
+// 지도를 눌러 출발지·도착지 고르기. 누른 곳의 주소를 이름으로 쓴다 (카카오 지도 SDK 주소 변환, 없으면 "지도에서 고른 곳")
+const JEJU_CENTER = { lat: 33.38, lng: 126.55 };
+const inJeju = (p: Pt) => p.lat > 33.1 && p.lat < 33.6 && p.lng > 126.08 && p.lng < 127; // app/api/plan의 point()와 같은 범위
+export function PickMap({ onPick }: { onPick: (p: { name: string; address?: string; lat: number; lng: number }) => void }) {
+  const box = useRef<HTMLDivElement>(null);
+  const [spot, setSpot] = useState<{ name: string; address?: string; lat: number; lng: number } | null>(null);
+  const [err, setErr] = useState('');
+
+  useEffect(() => {
+    if (!KEY) return;
+    loadSdk().then((kakao) => {
+      if (!box.current) return;
+      const { maps } = kakao;
+      const map = new maps.Map(box.current, { center: new maps.LatLng(JEJU_CENTER.lat, JEJU_CENTER.lng), level: 9 });
+      map.setMaxLevel(10); // 제주 섬 하나가 다 보이는 데까지만 멀어짐
+      // 지금 위치가 제주면 거기서 시작
+      navigator.geolocation?.getCurrentPosition((p) => {
+        const me = { lat: p.coords.latitude, lng: p.coords.longitude };
+        if (inJeju(me)) (map.setCenter(new maps.LatLng(me.lat, me.lng)), map.setLevel(5));
+      }, () => {}, { timeout: 5000, maximumAge: 60_000 });
+      // 고른 곳 = 감귤 로고 핀 (기본 파란 마커 대신)
+      const marker = new maps.CustomOverlay({ yAnchor: 1, zIndex: 3, content: '<img class="tangerine" src="/icon.svg" alt="고른 곳">' });
+      const geocoder = new maps.services.Geocoder();
+      maps.event.addListener(map, 'click', (e: Kakao) => {
+        const p = { lat: e.latLng.getLat(), lng: e.latLng.getLng() };
+        if (!inJeju(p)) return setErr('제주 안에서 골라 주세요');
+        setErr('');
+        marker.setPosition(e.latLng);
+        marker.setMap(map);
+        setSpot({ name: '지도에서 고른 곳', ...p });
+        geocoder.coord2Address(p.lng, p.lat, (res: Kakao[], status: string) => {
+          const a = status === maps.services.Status.OK ? res[0] : null;
+          const name = a?.road_address?.building_name || a?.road_address?.address_name || a?.address?.address_name;
+          if (name) setSpot({ name, address: a?.address?.address_name, ...p });
+        });
+      });
+    }).catch((e) => setErr(e.message));
+  }, []);
+
+  if (!KEY) return <p className="warn">지도를 쓸 수 없어요</p>;
+  return (
+    <div className="pickmap">
+      {/* 한라산과 바다 물결 띠 */}
+      <div className="pick-head">
+        <svg viewBox="0 0 120 28" width="96" height="22" aria-hidden="true"><path d="M0 24 Q30 20 46 10 Q60 2 74 10 Q90 20 120 24Z" fill="currentColor" opacity=".85" /><path d="M0 26 q7.5-3 15 0 t15 0 t15 0 t15 0 t15 0 t15 0 t15 0 t15 0" fill="none" stroke="var(--green)" strokeWidth="1.6" /></svg>
+        <span>제주 어디로 갈까요?</span>
+      </div>
+      <div ref={box} className="map" role="application" aria-label="지도를 눌러 위치 고르기" />
+      <div className="row">
+        <span className="muted">{spot ? spot.name : '지도를 눌러 감귤을 꽂아 보세요'}</span>
+        <button className="primary" disabled={!spot} onClick={() => spot && onPick(spot)}>이 위치로</button>
+      </div>
+      {err && <p className="warn">{err}</p>}
+    </div>
+  );
 }
