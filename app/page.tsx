@@ -213,11 +213,12 @@ export default function Home() {
   // 출발·도착이 바뀌면 ODsay로 경로 후보를 받고, 30초마다 실시간·시간표만 다시 계산한다.
   // 따라가는 경로의 구간 키: 타기 전이면 모든 구간, 탄 뒤면 환승 구간만 (서버가 실시간을 먼저 조회)
   function pinKeys(): string[] {
-    const r = frozenRef.current?.r ?? routesRef.current.find((x) => routeKey(x) === pinRef.current);
+    const fk = pinRef.current || selRef.current; // 따라가는 경로 (눌러서 고른 카드 포함)
+    const r = frozenRef.current?.r ?? routesRef.current.find((x) => routeKey(x) === fk);
     // 탄 뒤에는 지금 탄 버스의 내릴 정류장도: 내 버스가 늦는지 실제 위치로 본다 (lib/follow.ts onBus)
     const on = frozenRef.current && r?.rides[frozenRef.current.k - 1];
     const off = on?.endStationId ? on.routeIds.filter(Boolean).map((id) => `${id}:${on.endStationId}`) : [];
-    return r && pinRef.current ? [...off, ...(heldRef.current ? [] : rideKeys([r], true)), ...rideKeys([r], false)].slice(0, 12) : [];
+    return r && fk ? [...off, ...(heldRef.current ? [] : rideKeys([r], true)), ...rideKeys([r], false)].slice(0, 12) : [];
   }
   async function plan(refresh = false) {
     if (refresh && !live.current) return;
@@ -323,16 +324,22 @@ export default function Home() {
         const firsts = ranked.filter(ended).flatMap((r) => (r.firstBus !== undefined ? [r.firstBus] : []));
         return setMsg(`막차가 끝났어요.${firsts.length ? ` 내일 첫차는 ${clock12(Math.min(...firsts))}부터예요.` : ''}`);
       }
-      // 자동 갱신 때 고른 경로(안 골랐으면 1위)가 목록에서 빠지면 화면을 그대로 둔다: 그 버스를 이미 탔으면 정류장을 지나쳐 후보에서 빠지기 때문
-      // 단순화: 고정된 동안 시각은 마지막 계산 그대로, 다른 경로가 더 빨라져도 바꾸지 않음
       const next = shown.slice(0, 3), cur = routesRef.current;
-      if (refresh && pinRef.current) {
+      // 따라갈 경로: "이 경로로 갈게요"를 누른 경로, 아니면 카드를 눌러 고른 경로, 아니면 목록에서 빠진 1위.
+      // 고른 경로가 빠지는 건 보통 그 버스를 이미 타서 정류장을 지났기 때문이다. 예전에는 그때 화면을 마지막 계산 그대로 멈췄는데,
+      // 탄 뒤에도 버스 위치·갈아탈 버스를 계속 실시간으로 다시 계산한다 (사용자 요청 2026-11-03)
+      const picked = cur[Math.max(0, cur.findIndex((r) => routeKey(r) === selRef.current))];
+      const lost = !!picked && !next.some((r) => routeKey(r) === routeKey(picked));
+      if (refresh && lost && !pinRef.current && !selRef.current) setSelKey((selRef.current = routeKey(picked))); // 같은 노선 다음 차가 다시 보여도 계속 따라가게 고른 것으로
+      const fk = pinRef.current || (refresh ? selRef.current : '');
+      if (frozenRef.current && routeKey(frozenRef.current.r) !== fk) frozenRef.current = null; // 다른 카드를 고르면 새로 따라감
+      if (refresh && fk) {
         // "이 경로로 갈게요"를 누른 경로를 맨 위에, 그 아래에 새로 찾은 경로들. 타려던 버스가 지나가면 탄 것으로 보고 고정한다.
         const nowMs = Date.now(), nowMin = nowMs / 60000, atMs = atRef.current?.getTime() ?? nowMs;
-        const old = cur.find((r) => routeKey(r) === pinRef.current), found = ranked.find((r) => routeKey(r) === pinRef.current);
+        const old = cur.find((r) => routeKey(r) === fk), found = ranked.find((r) => routeKey(r) === fk);
         const fresh = found && walking(found, (nowMs - (sinceRef.current || atMs)) / 60000);
         const board = (r: Ranked | undefined, ms: number, j: number) => (r?.eta?.boards[j] ? ms / 60000 + r.eta.boards[j].at : NaN);
-        const unpin = () => { pinRef.current = ''; frozenRef.current = null; setPin(''); setHeld(false); setRoutes(next); setAt(new Date()); };
+        const unpin = () => { pinRef.current = ''; selRef.current = ''; frozenRef.current = null; setPin(''); setSelKey(''); setHeld(false); setRoutes(next); setAt(new Date()); };
         // 도착하고 30분이 지나면 따라가기를 끝낸다
         if (old?.eta && nowMs > atMs + (old.eta.min + 30) * 60000) return unpin();
         let f = frozenRef.current, top: Ranked | undefined;
@@ -351,12 +358,10 @@ export default function Home() {
           }
           setHeld(true);
         }
-        setRoutes([...(top ? [top] : []), ...next.filter((r) => routeKey(r) !== pinRef.current)]);
+        setRoutes([...(top ? [top] : []), ...next.filter((r) => routeKey(r) !== fk)]);
         setAt(new Date());
         return;
       }
-      const picked = cur[Math.max(0, cur.findIndex((r) => routeKey(r) === selRef.current))];
-      if (refresh && picked && !next.some((r) => routeKey(r) === routeKey(picked))) return setHeld(true);
       setHeld(false);
       setRoutes(next);
       if (!refresh) (setSelKey(''), setPin(''), (frozenRef.current = null));
@@ -427,8 +432,8 @@ export default function Home() {
           <span className="muted">{held ? '고른 경로 유지 중' : '30초마다 자동 갱신'}</span>
         </div>
       )}
-      {at && held && !pin && <p className="muted">타려던 버스가 정류장을 지나서, 탄 경로를 계속 보여드려요(시각은 {kstClock(at)} 계산 기준). 새로 찾으려면 출발지를 다시 고르세요.</p>}
-      {at && pin && <p className="muted">{held ? '타려던 버스가 정류장을 지나서 탄 것으로 봐요. 갈아탈 버스는 계속 실시간으로 다시 계산해요.' : '맨 위 경로를 따라가요. 타려던 버스가 지나가면 그때 계산으로 고정해요.'} 아래는 30초마다 새로 찾은 경로예요.</p>}
+      {at && held && !pin && <p className="muted">타려던 버스가 정류장을 지나서 탄 것으로 봐요. 탄 버스 위치와 갈아탈 버스를 30초마다 실시간으로 다시 계산해요. 새로 찾으려면 출발지를 다시 고르세요.</p>}
+      {at && pin && <p className="muted">{held ? '타려던 버스가 정류장을 지나서 탄 것으로 봐요. 탄 버스 위치와 갈아탈 버스를 계속 실시간으로 다시 계산해요.' : '맨 위 경로를 따라가요. 타려던 버스가 지나가면 그때 계산으로 고정해요.'} 아래는 30초마다 새로 찾은 경로예요.</p>}
       {at && routes.length > 0 && rtDown && <p className="warn">실시간 버스 위치를 받지 못해 일부는 시간표로 계산했어요.</p>}
       {walkFirst && (
         <article className={`box result best${walkSel ? ' sel' : ''}`} role="button" tabIndex={0} aria-pressed={walkSel} onClick={() => setSelKey('walk')}
@@ -460,7 +465,7 @@ export default function Home() {
                 const l = r.candidate.legs[j], b = r.eta?.boards[j];
                 const [on, side] = splitStop(x.from);
                 const prevOff = j ? splitStop(r.rides[j - 1].to)[0] : '';
-                const rode = held && key === pin ? (r.rode ?? 1) : 0, onBus = j === rode - 1, past = j < rode - 1;
+                const rode = held ? (r.rode ?? 0) : 0, onBus = j === rode - 1, past = j < rode - 1;
                 const ended = j > 0 && !r.eta && !l.timetableMin && !l.intervalMin;
                 const time = onBus ? <span className="when live">탄 버스</span> : past ? <span className="when off">지나옴</span>
                   // 모두 "지금부터" 몇 분 뒤 (사용자 요청 2026-11-02: 시각 대신 "N시간 M분 뒤 도착")
