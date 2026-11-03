@@ -293,6 +293,16 @@ export default function Home() {
           if (l.path?.length) pathsRef.current.set(legKey(l), l.path);
           else l.path = pathsRef.current.get(legKey(l)) ?? [];
         }
+        // 갱신 때 새로 나타난 후보(처음 검색엔 없던 구간)는 선이 없어 지도에 직선으로 그려졌다 → 그 구간만 노선 모양을 따로 받는다
+        const miss = trips.flatMap((t) => t.legs).filter((l) => !l.path?.length);
+        if (miss.length) {
+          const mk = (l: Trip['legs'][number]) => `${l.routeIds[0]}:${l.fromId}:${l.stopsBy?.[0] ?? l.stops}`;
+          const got = await fetch(`/api/plan?${new URLSearchParams({ paths: [...new Set(miss.map(mk))].slice(0, 30).join(',') })}`).then((x) => x.json()).catch(() => ({}));
+          for (const l of miss) {
+            const pts = got.paths?.[mk(l)];
+            if (pts?.length > 1) (l.path = pts, pathsRef.current.set(legKey(l), pts));
+          }
+        }
         // ODsay 경로의 지도 선을 노선 모양(도로)으로 바꾼다
         for (const o of odsay) for (const x of o.rides) if (r.paths?.[pathKey(x)]?.length > 1) x.path = r.paths[pathKey(x)];
         // "이 노선에 없는 정류장"은 고장이 아니다. 실시간 API 오류·무응답만 안내한다.
