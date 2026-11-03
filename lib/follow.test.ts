@@ -72,3 +72,28 @@ test('마지막 버스에서 내린 뒤: 남은 걷기만', () => {
   const out = riding({ r, t: T0, k: 2 }, T0 + 41 * min, {}, {}, {});
   assert.equal(out.eta!.min, 2);
 });
+
+// 내릴 정류장 키가 있는 경로 (구간마다 5정류장)
+function routeEnd(): Followed {
+  const r = route();
+  return { ...r, rides: r.rides.map((x, i) => ({ ...x, endStationId: `40700000${i}` })) };
+}
+
+test('탄 버스가 늦으면 실제 위치로 남은 시간을 늘림', () => {
+  const r = routeEnd(); // 212를 20분에 타서 시간표로는 40분에 내림 (5정류장 20분)
+  // 38분 뒤: 시간표로는 2분 남았는데 내 버스는 아직 3정류장 남음, 뒤차는 5정류장 넘게 뒤
+  const out = riding({ r, t: T0, k: 2 }, T0 + 38 * min, { '405321202:407000001': [3, 9] }, {}, {});
+  assert.equal(out.eta!.min, 12 + 3); // 3정류장 × 4분 + 걷기 3
+});
+
+test('시간표로는 내렸을 때인데 버스가 아직 오는 중이면 버스 안으로 봄', () => {
+  const r = routeEnd();
+  const out = riding({ r, t: T0, k: 2 }, T0 + 45 * min, { '405321202:407000001': [1] }, {}, {});
+  assert.equal(out.eta!.min, 4 + 3);
+});
+
+test('내 버스가 이미 지나갔고 뒤차만 있으면 시간표대로 (뒤차를 내 버스로 오인하지 않음)', () => {
+  const r = routeEnd();
+  const out = riding({ r, t: T0, k: 2 }, T0 + 41 * min, { '405321202:407000001': [4] }, {}, {});
+  assert.equal(out.eta!.min, 2);
+});

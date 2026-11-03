@@ -31,9 +31,24 @@ export function passed(prevBoard: number, nextBoard: number, now: number): boole
   return prevBoard - now <= 2 && nextBoard > prevBoard + 3;
 }
 
+// 탄 버스의 실제 위치로 내릴 때까지 남은 분. 실시간에 없으면 null (시간표대로 간다고 봄).
+// 시간표대로만 두면 늦는 버스를 못 따라간다: 270번 제주대→상귀동카름, 시간표 54분인데 월요일 퇴근길에 약 75분 걸렸고
+// 화면은 끝까지 7:14 도착이라고 했다 (실제 7:36, 2026-11-02 사용자 실측).
+// 내릴 정류장까지 남은 정류장 수 중 탈 정류장을 지난 버스(구간 정류장 수보다 적게 남음), 그중 시간표상 지금 있을 곳에 가장 가까운 버스를 내 버스로 본다.
+// 단순화: 남은 구간은 계획한 탑승 시간을 정류장 수로 나눠 씀, 뒤차가 내 버스보다 시간표 위치에 더 가까우면 잘못 고름
+export function onBus(ride: Route['rides'][number] | undefined, id: string | undefined, rideMin: number, planned: number, results: PlanResults): number | null {
+  const key = ride?.endStationId && `${id ?? ride.routeIds.find(Boolean)}:${ride.endStationId}`;
+  const away = key ? results[key] : undefined, span = ride?.stops ?? 0;
+  if (!Array.isArray(away) || !span || !rideMin) return null;
+  const expect = (span * Math.min(Math.max(planned, 0), rideMin)) / rideMin;
+  // 시간표 위치보다 구간 절반 넘게 뒤처진 버스는 뒤차로 본다 (내 버스는 이미 내릴 정류장을 지남)
+  const mine = away.filter((a) => a < span && a <= expect + span / 2).sort((a, b) => Math.abs(a - expect) - Math.abs(b - expect))[0];
+  return mine === undefined ? null : (rideMin * mine) / span;
+}
+
 // 탄 버스 안: 탄 구간은 끝난 것으로, 지금 탄 버스는 남은 탑승 시간만, 그 뒤 환승 버스는 새 실시간·시간표로 다시 계산한다.
 // 다시 계산할 수 없으면(환승 버스 정보 없음) 고정한 시각을 그대로 쓴다.
-// 단순화: 탄 버스는 시간표 탑승 시간대로 간다고 봄 (내 버스의 실제 위치는 모름)
+// 탄 버스의 남은 시간은 onBus(실제 위치), 없으면 시간표 탑승 시간대로
 export function riding(f: Frozen, nowMs: number, results: PlanResults, headways: Headways, sched: Schedules): Followed {
   const { k } = f, now = nowMs / 60000, base = f.t / 60000;
   const fixed = { ...shift(f.r, now - base), rode: k };
@@ -47,7 +62,8 @@ export function riding(f: Frozen, nowMs: number, results: PlanResults, headways:
     return id ? { src: [[0, id]] as [number, string][] } : {};
   };
   const done = L.slice(0, k - 1).map((_, j) => ({ walkBeforeMin: 0, rideMin: 0, nextBusesMin: [0], ...src(j) }));
-  const off = base + B[k - 1].at + L[k - 1].rideMin - now; // 탄 버스에서 내릴 때까지 남은 분 (음수 = 이미 내림)
+  const planned = base + B[k - 1].at + L[k - 1].rideMin - now; // 시간표대로 가면 내릴 때까지 남은 분 (음수 = 이미 내림)
+  const off = onBus(f.r.rides[k - 1], L[k - 1].src?.find(([m]) => Math.abs(m - B[k - 1].at) < 1e-6)?.[1], L[k - 1].rideMin, planned, results) ?? planned;
   const tail = re.candidate.legs.slice(k), zero: Board = { at: 0, atStop: 0, how: 'realtime' };
   if (off <= 0) {
     // 이미 내렸으면 다음 정류장(또는 목적지)으로 그만큼 걸어갔다고 보고, 다음 버스는 첫 버스처럼(1분 여유) 계산한다.
