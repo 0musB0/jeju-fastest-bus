@@ -39,7 +39,8 @@ function marks(from: Pt, to: Pt, rides: Ride[], walkPath?: Pt[]): { list: Mark[]
   return { list, segs };
 }
 
-export default function RouteMap({ from, to, rides, walkPath }: { from: Pt; to: Pt; rides: Ride[]; walkPath?: Pt[] }) {
+// bus = 탄 버스의 지금 위치 (따라가는 중, 실시간)
+export default function RouteMap({ from, to, rides, walkPath, bus }: { from: Pt; to: Pt; rides: Ride[]; walkPath?: Pt[]; bus?: Pt }) {
   const box = useRef<HTMLDivElement>(null);
   const map = useRef<Kakao>(null);
   const drawn = useRef<Kakao[]>([]);
@@ -59,6 +60,7 @@ export default function RouteMap({ from, to, rides, walkPath }: { from: Pt; to: 
       drawn.current = [
         ...segs.map((s) => new maps.Polyline({ map: map.current, path: s.path.map(ll), strokeWeight: s.bus ? 5 : 3, strokeColor: s.bus ? accent : '#857f74', strokeOpacity: 0.9, strokeStyle: s.bus ? 'solid' : 'shortdash' })),
         ...list.map((m) => new maps.CustomOverlay({ map: map.current, position: ll(m.pt), yAnchor: 1.2, content: `<div class="pin ${m.kind}">${m.label}</div>` })),
+        ...(bus ? [new maps.CustomOverlay({ map: map.current, position: ll(bus), yAnchor: 1.2, zIndex: 3, content: '<div class="pin bus">탄 버스</div>' })] : []),
       ];
       const bounds = new maps.LatLngBounds();
       list.forEach((m) => bounds.extend(ll(m.pt)));
@@ -66,7 +68,7 @@ export default function RouteMap({ from, to, rides, walkPath }: { from: Pt; to: 
       map.current.setBounds(bounds, 40, 30, 30, 30);
     }).catch((e) => setErr(e.message));
     return () => { alive = false; };
-  }, [from, to, rides]);
+  }, [from, to, rides, bus?.lat, bus?.lng]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!KEY) return null;
   return err ? <p className="warn">{err}</p> : <div ref={box} className="map" role="img" aria-label="경로 지도" />;

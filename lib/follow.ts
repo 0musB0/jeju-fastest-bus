@@ -5,7 +5,8 @@ import { applyRealtime, type Headways, type PlanResults, type Schedules } from '
 
 // "이 경로로 갈게요"로 따라가는 경로 (순수 함수만, 화면 상태는 app/page.tsx)
 // rode = 이미 탄 구간 수 (1 = 첫 버스 안, 2 = 첫 환승 버스 안 …)
-export type Followed = Route & { eta: ReturnType<typeof arrivalMin>; rode?: number };
+// bus = 탄 버스의 실시간 위치 키("노선:내릴 정류장")와 내릴 곳까지 남은 정류장 수 (화면에 지금 위치 표시)
+export type Followed = Route & { eta: ReturnType<typeof arrivalMin>; rode?: number; bus?: { key: string; left: number } };
 // 탄 것으로 본 순간의 계산: r은 t(ms)에 계산한 경로, k는 그때까지 탄 구간 수
 export type Frozen = { r: Followed; t: number; k: number };
 
@@ -36,14 +37,14 @@ export function passed(prevBoard: number, nextBoard: number, now: number): boole
 // 화면은 끝까지 7:14 도착이라고 했다 (실제 7:36, 2026-11-02 사용자 실측).
 // 내릴 정류장까지 남은 정류장 수 중 탈 정류장을 지난 버스(구간 정류장 수보다 적게 남음), 그중 시간표상 지금 있을 곳에 가장 가까운 버스를 내 버스로 본다.
 // 단순화: 남은 구간은 계획한 탑승 시간을 정류장 수로 나눠 씀, 뒤차가 내 버스보다 시간표 위치에 더 가까우면 잘못 고름
-export function onBus(ride: Route['rides'][number] | undefined, id: string | undefined, rideMin: number, planned: number, results: PlanResults): number | null {
+export function onBus(ride: Route['rides'][number] | undefined, id: string | undefined, rideMin: number, planned: number, results: PlanResults): { min: number; key: string; left: number } | null {
   const key = ride?.endStationId && `${id ?? ride.routeIds.find(Boolean)}:${ride.endStationId}`;
   const away = key ? results[key] : undefined, span = ride?.stops ?? 0;
   if (!Array.isArray(away) || !span || !rideMin) return null;
   const expect = (span * Math.min(Math.max(planned, 0), rideMin)) / rideMin;
   // 시간표 위치보다 구간 절반 넘게 뒤처진 버스는 뒤차로 본다 (내 버스는 이미 내릴 정류장을 지남)
   const mine = away.filter((a) => a < span && a <= expect + span / 2).sort((a, b) => Math.abs(a - expect) - Math.abs(b - expect))[0];
-  return mine === undefined ? null : (rideMin * mine) / span;
+  return mine === undefined || !key ? null : { min: (rideMin * mine) / span, key, left: mine };
 }
 
 // 탄 버스 안: 탄 구간은 끝난 것으로, 지금 탄 버스는 남은 탑승 시간만, 그 뒤 환승 버스는 새 실시간·시간표로 다시 계산한다.
@@ -63,7 +64,8 @@ export function riding(f: Frozen, nowMs: number, results: PlanResults, headways:
   };
   const done = L.slice(0, k - 1).map((_, j) => ({ walkBeforeMin: 0, rideMin: 0, nextBusesMin: [0], ...src(j) }));
   const planned = base + B[k - 1].at + L[k - 1].rideMin - now; // 시간표대로 가면 내릴 때까지 남은 분 (음수 = 이미 내림)
-  const off = onBus(f.r.rides[k - 1], L[k - 1].src?.find(([m]) => Math.abs(m - B[k - 1].at) < 1e-6)?.[1], L[k - 1].rideMin, planned, results) ?? planned;
+  const live = onBus(f.r.rides[k - 1], L[k - 1].src?.find(([m]) => Math.abs(m - B[k - 1].at) < 1e-6)?.[1], L[k - 1].rideMin, planned, results);
+  const off = live?.min ?? planned, bus = live ? { bus: { key: live.key, left: live.left } } : {};
   const tail = re.candidate.legs.slice(k), zero: Board = { at: 0, atStop: 0, how: 'realtime' };
   if (off <= 0) {
     // 이미 내렸으면 다음 정류장(또는 목적지)으로 그만큼 걸어갔다고 보고, 다음 버스는 첫 버스처럼(1분 여유) 계산한다.
@@ -79,5 +81,5 @@ export function riding(f: Frozen, nowMs: number, results: PlanResults, headways:
   const on = { walkBeforeMin: -BOARD_MARGIN_MIN, nextBusesMin: [0], rideMin: off, ...src(k - 1) };
   const eta = arrivalMin({ legs: [on, ...tail], walkAfterMin: re.candidate.walkAfterMin });
   if (!eta) return fixed;
-  return { ...re, rode: k, candidate: { ...re.candidate, legs: [...done, on, ...tail] }, eta: { ...eta, boards: [...done.map(() => zero), ...eta.boards] } };
+  return { ...re, rode: k, ...bus, candidate: { ...re.candidate, legs: [...done, on, ...tail] }, eta: { ...eta, boards: [...done.map(() => zero), ...eta.boards] } };
 }

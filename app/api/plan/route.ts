@@ -111,6 +111,16 @@ export async function GET(req: Request) {
     const away = loc.ok ? stopsAway(parked ? loc.stops.map((x, k) => (k === 0 ? { ...x, bus: false } : x)) : loc.stops, s) : null;
     results[`${r}:${s}`] = !loc.ok ? { error: loc.reason } : away ?? { error: '이 노선에 없는 정류장' };
   }
+  // 따라가는 경로(pin) 구간만: 남은 정류장 수 → 그 버스가 지금 있는 정류장 (화면에 탄 버스 위치)
+  const pos: Record<string, Record<number, { name: string; lat: number; lng: number }>> = {};
+  for (const [r, s] of pinPairs) {
+    const loc = locs.get(r), mine = loc?.ok ? loc.stops.find((x) => x.stationId === s)?.ord : undefined;
+    if (!loc?.ok || mine === undefined) continue;
+    for (const b of loc.stops) {
+      const st = b.bus && b.ord <= mine ? stationById.get(b.stationId) : undefined;
+      if (st) (pos[`${r}:${s}`] ??= {})[mine - b.ord] = { name: st.name, lat: st.lat, lng: st.lng };
+    }
+  }
   const headways: Record<string, number> = {};
   for (const [r, loc] of locs) {
     const h = loc.ok ? headwayMin(loc.stops) : undefined;
@@ -182,5 +192,5 @@ export async function GET(req: Request) {
     walkAll = Math.round((ok ? r.m : distM(from, to) * WALK_DETOUR) / WALK_M_PER_MIN);
     walkAllPath = ok ? r.path : [from, to];
   }
-  return Response.json({ results, headways, scheduled, pending, firstBus, trips: out, paths, stopsOk, walkFrom, walkTo, walkAll, walkAllPath });
+  return Response.json({ results, pos, headways, scheduled, pending, firstBus, trips: out, paths, stopsOk, walkFrom, walkTo, walkAll, walkAllPath });
 }
