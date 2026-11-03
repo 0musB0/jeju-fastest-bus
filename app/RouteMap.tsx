@@ -77,19 +77,37 @@ export default function RouteMap({ from, to, rides, walkPath, bus, me, heading }
   }, [from, to, rides]);
 
   // 움직이는 표시(탄 버스, 내 위치)는 따로: 20초·GPS마다 지도 범위를 다시 맞추면 사용자가 옮긴 화면이 튄다
-  const live = useRef<Kakao[]>([]);
+  // 표시는 한 번 만들고 자리·방향만 바꾼다. 갱신마다 지우고 새로 만들면 아이콘이 깜박인다 (2026-11-03)
+  const busOv = useRef<Kakao>(null), meOv = useRef<Kakao>(null), arrow = useRef<HTMLElement | null>(null), rot = useRef(0);
   useEffect(() => {
     if (!KEY) return;
     loadSdk().then((kakao) => {
       if (!map.current) return; // 지도가 아직이면 ready가 바뀔 때 다시 그림
       const { maps } = kakao;
-      live.current.forEach((o) => o.setMap(null));
-      live.current = [
-        ...(bus ? [new maps.CustomOverlay({ map: map.current, position: new maps.LatLng(bus.lat, bus.lng), yAnchor: 1.2, zIndex: 3, content: '<div class="pin bus">탄 버스</div>' })] : []),
-        ...(me ? [new maps.CustomOverlay({ map: map.current, position: new maps.LatLng(me.lat, me.lng), zIndex: 4, content: `<div class="me">${heading === undefined ? '' : `<i style="transform:rotate(${Math.round(heading)}deg)"></i>`}<img src="/icon.svg" alt="내 위치"></div>` })] : []),
-      ];
+      if (bus) {
+        busOv.current ??= new maps.CustomOverlay({ yAnchor: 1.2, zIndex: 3, content: '<div class="pin bus">탄 버스</div>' });
+        busOv.current.setPosition(new maps.LatLng(bus.lat, bus.lng));
+        busOv.current.setMap(map.current);
+      } else busOv.current?.setMap(null);
+      if (me) {
+        if (!meOv.current) {
+          const el = document.createElement('div');
+          el.className = 'me';
+          el.innerHTML = '<i></i><img src="/icon.svg" alt="내 위치">';
+          arrow.current = el.querySelector('i');
+          meOv.current = new maps.CustomOverlay({ zIndex: 4, content: el });
+        }
+        meOv.current.setPosition(new maps.LatLng(me.lat, me.lng));
+        meOv.current.setMap(map.current);
+        if (arrow.current) {
+          arrow.current.style.display = heading === undefined ? 'none' : '';
+          // 359° → 1°를 거꾸로 한 바퀴 돌지 않게 가까운 쪽으로 돈다
+          if (heading !== undefined) rot.current += ((heading - rot.current) % 360 + 540) % 360 - 180;
+          arrow.current.style.transform = `rotate(${Math.round(rot.current)}deg)`;
+        }
+      } else meOv.current?.setMap(null);
     }).catch(() => {});
-  }, [ready, bus?.lat, bus?.lng, me?.lat, me?.lng, heading, rides]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [ready, bus?.lat, bus?.lng, me?.lat, me?.lng, heading]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!KEY) return null;
   return err ? <p className="warn">{err}</p> : <div ref={box} className="map" role="img" aria-label="경로 지도" />;
