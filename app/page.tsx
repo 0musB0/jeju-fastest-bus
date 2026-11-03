@@ -196,6 +196,7 @@ export default function Home() {
   const [walkMin, setWalkMin] = useState<number | null>(null); // 버스 없이 걸어가는 시간(3km 안)
   const [walkPath, setWalkPath] = useState<Pt[] | undefined>(undefined);
   const [pos, setPos] = useState<Record<string, Record<number, Pt & { name: string }>>>({}); // 따라가는 구간 버스 위치 (남은 정류장 수 → 정류장)
+  const [me, setMe] = useState<Pt | undefined>(undefined); // 따라가는 동안 내 위치 (GPS, 지도에만 표시)
   const busAt = (r: Ranked) => (r.bus ? pos[r.bus.key]?.[r.bus.left] : undefined); // 탄 버스가 지금 있는 정류장
   const [pin, setPin] = useState(''); // "이 경로로 갈게요"로 고른 경로: 갱신 때 이 경로만 보여준다
   const sinceRef = useRef(0); // 따라가기를 누른 시각(ms): 그때부터 정류장으로 걸어간다고 봄
@@ -405,6 +406,12 @@ export default function Home() {
     } catch {}
   }, [pin, held, at]); // eslint-disable-line react-hooks/exhaustive-deps
   // 자동 갱신: 화면을 보고 있을 때만 30초마다 (서버의 실시간 캐시가 20초). 돌아왔다고 바로 다시 계산하지는 않는다.
+  // 따라가는 동안(누른 경로 또는 탄 상태) 내 위치를 계속 받는다. 위치 권한을 거부하면 표시만 안 함
+  useEffect(() => {
+    if (!(pin || held) || !navigator.geolocation) return setMe(undefined);
+    const w = navigator.geolocation.watchPosition((p) => setMe({ lat: p.coords.latitude, lng: p.coords.longitude }), () => setMe(undefined), { enableHighAccuracy: true, maximumAge: 10_000 });
+    return () => navigator.geolocation.clearWatch(w);
+  }, [pin, held]);
   useEffect(() => {
     const id = setInterval(() => { if (document.visibilityState === 'visible') plan(true); }, 30_000);
     return () => clearInterval(id);
@@ -448,7 +455,7 @@ export default function Home() {
         </article>
       )}
       {from && to && walkSel && <RouteMap from={from} to={to} rides={[]} walkPath={walkPath} />}
-      {from && to && !walkSel && routes[sel] && <RouteMap from={from} to={to} rides={routes[sel].rides} bus={busAt(routes[sel])} />}
+      {from && to && !walkSel && routes[sel] && <RouteMap from={from} to={to} rides={routes[sel].rides} bus={busAt(routes[sel])} me={me} />}
       {routes.map((r, i) => {
         const key = routeKey(r);
         const walk = r.candidate.legs.reduce((s, l) => s + l.walkBeforeMin, r.candidate.walkAfterMin);

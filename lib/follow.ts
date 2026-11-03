@@ -38,8 +38,10 @@ export function passed(prevBoard: number, nextBoard: number, now: number): boole
 // 내릴 정류장까지 남은 정류장 수 중 탈 정류장을 지난 버스(구간 정류장 수보다 적게 남음), 그중 시간표상 지금 있을 곳에 가장 가까운 버스를 내 버스로 본다.
 // 단순화: 남은 구간은 계획한 탑승 시간을 정류장 수로 나눠 씀, 뒤차가 내 버스보다 시간표 위치에 더 가까우면 잘못 고름
 export function onBus(ride: Route['rides'][number] | undefined, id: string | undefined, rideMin: number, planned: number, results: PlanResults): { min: number; key: string; left: number } | null {
-  const key = ride?.endStationId && `${id ?? ride.routeIds.find(Boolean)}:${ride.endStationId}`;
-  const away = key ? results[key] : undefined, span = ride?.stops ?? 0;
+  const rid = id ?? ride?.routeIds.find(Boolean), key = ride?.endStationId && `${rid}:${ride.endStationId}`;
+  // 가지 노선마다 정류장 수가 다르다 (급행 111은 8개, 같은 구간 212는 56개)
+  const span = (rid && ride?.stopsBy?.[ride.routeIds.indexOf(rid)]) || ride?.stops || 0;
+  const away = key ? results[key] : undefined;
   if (!Array.isArray(away) || !span || !rideMin) return null;
   const expect = (span * Math.min(Math.max(planned, 0), rideMin)) / rideMin;
   // 시간표 위치보다 구간 절반 넘게 뒤처진 버스는 뒤차로 본다 (내 버스는 이미 내릴 정류장을 지남)
