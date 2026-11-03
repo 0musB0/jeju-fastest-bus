@@ -5,7 +5,8 @@ import { kstMinutes } from '@/lib/timetable';
 import { passed, riding, shift, walking, type Followed, type Frozen } from '@/lib/follow';
 import { parseOdsay, type Pt, type Route } from '@/lib/odsay';
 import { applyRealtime, tripsToRoutes, sameRide, rideKeys, stopKeys, onOurRoutes, withOurWalks, type Headways, type PlanResults, type Schedules } from '@/lib/realtime';
-import type { Trip } from '@/lib/direct';
+import { distM, type Trip } from '@/lib/direct';
+import { BOARDED_M } from '@/lib/config';
 import RouteMap, { PickMap } from './RouteMap';
 
 type Place = { name: string; address?: string; lat: number; lng: number };
@@ -159,12 +160,12 @@ function PlacePicker({ label, value, onPick, allowHere, favorites }: { label: st
               현재 위치 사용
             </button>
           )}
-          {onMap && <PickMap onPick={(p) => { onPick(p); setOnMap(false); }} />}
+          {onMap && <PickMap onPick={(p) => { onPick(p); setOnMap(false); setMsg(''); setList([]); }} />}
           {favorites && favs.length > 0 && !list.length && (
             <div className="favs">
               {favs.map((f) => (
                 <span key={`${f.lat},${f.lng},${f.name}`} className="favchip">
-                  <button onClick={() => onPick(f)}>{f.name}</button>
+                  <button onClick={() => { onPick(f); setMsg(''); }}>{f.name}</button>
                   <button className="x" aria-label={`${f.name} 즐겨찾기에서 빼기`} onClick={() => saveFavs(favs.filter((g) => g !== f))}>×</button>
                 </span>
               ))}
@@ -202,7 +203,9 @@ export default function Home() {
   const [walkMin, setWalkMin] = useState<number | null>(null); // 버스 없이 걸어가는 시간(3km 안)
   const [walkPath, setWalkPath] = useState<Pt[] | undefined>(undefined);
   const [pos, setPos] = useState<Record<string, Record<number, Pt & { name: string }>>>({}); // 따라가는 구간 버스 위치 (남은 정류장 수 → 정류장)
-  const [me, setMe] = useState<Pt | undefined>(undefined); // 내 위치 (GPS, 지도에만 표시)
+  const [me, setMe] = useState<Pt | undefined>(undefined); // 내 위치 (GPS, 지도와 '탔는지' 판단에 씀)
+  const meRef = useRef<Pt | undefined>(undefined);
+  meRef.current = me;
   const [heading, setHeading] = useState<number | undefined>(undefined); // 내가 바라보는 방향 (북쪽 0°, 시계 방향)
   const busAt = (r: Ranked) => (r.bus ? pos[r.bus.key]?.[r.bus.left] : undefined); // 탄 버스가 지금 있는 정류장
   const [pin, setPin] = useState(''); // "이 경로로 갈게요"로 고른 경로: 갱신 때 이 경로만 보여준다
@@ -364,8 +367,11 @@ export default function Home() {
       const picked = cur[Math.max(0, cur.findIndex((r) => routeKey(r) === selRef.current))];
       const lost = !!picked && !shown.some((r) => routeKey(r) === routeKey(picked)); // 4위 밖으로 밀린 건 빠진 게 아님
       // 카드를 눌러 보던(또는 1위) 경로가 빠지면 그 버스를 탄 것으로 보고 따라가기로 바꾼다 ("따라가기 그만"으로 끔).
+      // 단, 정말 탔을 때만: GPS가 있으면 승차 정류장 150m 안, 없으면 그 카드를 눌러 골랐을 때 (아무것도 안 눌렀는데 1위가 지나갔다고 고정되던 문제, 2026-11-03)
       // 카드 누르기는 지도에 보여줄 경로 고르기일 뿐이라 따라가는 경로를 바꾸지 않는다: 다른 카드를 보다가 내 경로 카드를 누르면 지도가 내 경로로 돌아온다
-      if (refresh && lost && !pinRef.current) { pinRef.current = routeKey(picked); setPin(pinRef.current); sinceRef.current ||= Date.now(); }
+      const st = picked?.rides[0]?.fromPt, me0 = meRef.current;
+      const boarded = me0 && st ? distM(me0, st) <= BOARDED_M : !!picked && selRef.current === routeKey(picked);
+      if (refresh && lost && boarded && !pinRef.current) { pinRef.current = routeKey(picked); setPin(pinRef.current); sinceRef.current ||= Date.now(); }
       const fk = pinRef.current;
       if (fk) {
         // "이 경로로 갈게요"를 누른 경로를 맨 위에, 그 아래에 새로 찾은 경로들. 타려던 버스가 지나가면 탄 것으로 보고 고정한다.
@@ -496,7 +502,7 @@ export default function Home() {
       {at && routes.length > 0 && (
         <div className="meta">
           <span><span className="num">{kstClock(at)}</span> 기준 · {pin ? '따라가는 경로 먼저' : '도착이 빠른 순'}</span>
-          <span className="muted">{held ? '고른 경로 유지 중' : '20초마다 자동 갱신'}</span>
+          <span className="muted">{held ? '고른 경로 유지 중' : '20초마다 갱신'}</span>
         </div>
       )}
       {at && held && !pin && <p className="muted">타려던 버스가 정류장을 지나서 탄 것으로 봐요. 탄 버스 위치와 갈아탈 버스를 20초마다 실시간으로 다시 계산해요. 새로 찾으려면 출발지를 다시 고르세요.</p>}
