@@ -74,3 +74,11 @@ test('ODsay 구간의 노선이 그 정류장들에 안 서면 경로를 뺀다'
   assert.equal(onOurRoutes(route, { '405130201:A:B': false, '405130101:A:B': false }), false);
   assert.equal(onOurRoutes(route, {}), true); // 확인 못 한 건 남김
 });
+
+test('우리 후보도 내릴 정류장 ID를 넘김 (탄 버스 위치를 내릴 정류장 기준으로 조회)', async () => {
+  const { tripsToRoutes } = await import('./realtime.ts');
+  const p = { lat: 33.5, lng: 126.5 };
+  const leg = { routeIds: ['405329203'], nos: ['292-3'], fromId: '405000043', fromName: '남주동', toId: '405000099', toName: '신성마을', stops: 18, walkBeforeMin: 1, rideMin: 13, distM: 9000, fromPt: p, toPt: p, path: [] };
+  const [r] = tripsToRoutes([{ legs: [leg], walkAfterMin: 13, cost: 0 } as never], []);
+  assert.equal(r.rides[0].endStationId, '405000099');
+});
