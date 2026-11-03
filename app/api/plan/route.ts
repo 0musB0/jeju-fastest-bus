@@ -5,7 +5,7 @@ import shapeData from '@/data/shapes.json';
 import stationList from '@/data/stations.json';
 import routeList from '@/data/routes.json';
 import timetableData from '@/data/timetable.json';
-import { arrivals, firstAt, kstDay, kstMinutes, offsetAt, type Timetable } from '@/lib/timetable';
+import { arrivals, firstAt, kstDay, kstMinutes, offsetAt, rideFactor, type Timetable } from '@/lib/timetable';
 import { MIN_PER_STOP, WALK_DETOUR, WALK_M_PER_MIN } from '@/lib/config';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -67,7 +67,9 @@ export async function GET(req: Request) {
   // pin = 화면에서 따라가는 경로의 구간들: 실시간 칸에 가장 먼저 넣는다 (타고 가는 중에도 환승 버스를 실시간으로)
   const pairs = parse(p.get('q')), laterPairs = parse(p.get('later')), pinPairs = parse(p.get('pin'));
   const from = point(p.get('from')), to = point(p.get('to'));
-  const trips = from && to ? findTrips(from, to, index, rideMin, 20, walker) : [];
+  // 평일 퇴근길엔 시간표 소요보다 오래 걸린다 (실측 배율, lib/config.ts RUSH_RIDE). 실시간 대기의 정류장당 소요도 여기서 나와 같이 늘어난다
+  const rf = rideFactor(new Date());
+  const trips = from && to ? findTrips(from, to, index, rf === 1 ? rideMin : (r, i, j) => Math.round(rideMin(r, i, j) * rf), 20, walker) : [];
   const tripFirst = trips.flatMap((t) => t.legs[0].routeIds.map((r) => [r, t.legs[0].fromId]));
   const tripLater = trips.flatMap((t) => t.legs.slice(1).flatMap((l) => l.routeIds.map((r) => [r, l.fromId])));
 
