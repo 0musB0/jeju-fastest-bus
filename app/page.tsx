@@ -305,8 +305,6 @@ export default function Home() {
         }
         // ODsay 경로의 지도 선을 노선 모양(도로)으로 바꾼다
         for (const o of odsay) for (const x of o.rides) if (r.paths?.[pathKey(x)]?.length > 1) x.path = r.paths[pathKey(x)];
-        // "이 노선에 없는 정류장"은 고장이 아니다. 실시간 API 오류·무응답만 안내한다.
-        setRtDown(Object.values(results).some((v) => !Array.isArray(v) && v.error !== '이 노선에 없는 정류장'));
       } catch {
         if (refresh) return; // 갱신 중 한 번 끊기면 이전 결과를 그대로 둔다
         setWalkMin(null);
@@ -348,6 +346,13 @@ export default function Home() {
         return setMsg(`막차가 끝났어요.${firsts.length ? ` 내일 첫차는 ${clock12(Math.min(...firsts))}부터예요.` : ''}`);
       }
       const next = shown.slice(0, 3), cur = routesRef.current;
+      // 경고는 보여주는 경로의 첫 버스가 실시간을 하나도 못 받았을 때만. 같은 번호의 가지 노선 하나(341-6 등)가 시간 초과여도
+      // 다른 가지(341-2)의 버스 위치를 받았으면 그 구간은 실시간으로 계산된다 (2026-11-03, 341-6·341-7은 busopen이 매번 시간 초과)
+      const noLive = (x: Route['rides'][number]) => {
+        const v = x.routeIds.map((id) => results[`${id}:${x.stationId}`]).filter((y) => y !== undefined);
+        return !v.some(Array.isArray) && v.some((y) => !Array.isArray(y) && y.error !== '이 노선에 없는 정류장');
+      };
+      if (Object.keys(results).length) setRtDown(next.some((r) => r.rides[0] && noLive(r.rides[0])));
       // 따라갈 경로: "이 경로로 갈게요"를 누른 경로, 아니면 카드를 눌러 고른 경로, 아니면 목록에서 빠진 1위.
       // 고른 경로가 빠지는 건 보통 그 버스를 이미 타서 정류장을 지났기 때문이다. 예전에는 그때 화면을 마지막 계산 그대로 멈췄는데,
       // 탄 뒤에도 버스 위치·갈아탈 버스를 계속 실시간으로 다시 계산한다 (사용자 요청 2026-11-03)
