@@ -39,8 +39,8 @@ function marks(from: Pt, to: Pt, rides: Ride[], walkPath?: Pt[]): { list: Mark[]
   return { list, segs };
 }
 
-// bus = 탄 버스의 지금 위치 (따라가는 중, 실시간), me = 내 위치 (따라가는 중 GPS)
-export default function RouteMap({ from, to, rides, walkPath, bus, me }: { from: Pt; to: Pt; rides: Ride[]; walkPath?: Pt[]; bus?: Pt; me?: Pt }) {
+// bus = 탄 버스의 지금 위치 (따라가는 중, 실시간), me = 내 위치 (GPS), heading = 내가 향한 방향(도)
+export default function RouteMap({ from, to, rides, walkPath, bus, me, heading }: { from: Pt; to: Pt; rides: Ride[]; walkPath?: Pt[]; bus?: Pt; me?: Pt; heading?: number }) {
   const box = useRef<HTMLDivElement>(null);
   const map = useRef<Kakao>(null);
   const drawn = useRef<Kakao[]>([]);
@@ -81,10 +81,10 @@ export default function RouteMap({ from, to, rides, walkPath, bus, me }: { from:
       live.current.forEach((o) => o.setMap(null));
       live.current = [
         ...(bus ? [new maps.CustomOverlay({ map: map.current, position: new maps.LatLng(bus.lat, bus.lng), yAnchor: 1.2, zIndex: 3, content: '<div class="pin bus">탄 버스</div>' })] : []),
-        ...(me ? [new maps.CustomOverlay({ map: map.current, position: new maps.LatLng(me.lat, me.lng), zIndex: 4, content: '<img class="me" src="/icon.svg" alt="내 위치">' })] : []),
+        ...(me ? [new maps.CustomOverlay({ map: map.current, position: new maps.LatLng(me.lat, me.lng), zIndex: 4, content: `<div class="me">${heading === undefined ? '' : `<i style="transform:rotate(${Math.round(heading)}deg)"></i>`}<img src="/icon.svg" alt="내 위치"></div>` })] : []),
       ];
     }).catch(() => {});
-  }, [ready, bus?.lat, bus?.lng, me?.lat, me?.lng, rides]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [ready, bus?.lat, bus?.lng, me?.lat, me?.lng, heading, rides]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!KEY) return null;
   return err ? <p className="warn">{err}</p> : <div ref={box} className="map" role="img" aria-label="경로 지도" />;
