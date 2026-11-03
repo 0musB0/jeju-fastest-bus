@@ -304,7 +304,7 @@ export default function Home() {
       // 오늘 운행이 끝나 내일 첫차를 타야 하는 경로는 보여주지 않는다 (첫차 전 새벽은 오늘 안이라 그대로 둠)
       const nowMin = kstMinutes(new Date());
       // 환승 버스도 시간표는 있는데 오늘 남은 차가 없으면(서버가 첫차 시각만 줌) 끝난 것으로 본다
-      const transferEnded = (r: Route) => r.candidate.legs.some((l, i) => i > 0 && !l.timetableMin && !l.nextBusesMin && !l.intervalMin
+      const transferEnded = (r: Route) => r.candidate.legs.some((l, i) => i > 0 && !l.timetableMin && !l.nextBusesMin?.length && !l.intervalMin
         && r.rides[i].routeIds.some((id) => sched.firstBus?.[`${id}:${r.rides[i].stationId}`] !== undefined));
       const ended = (r: (typeof ranked)[number]) => !r.eta && ((r.firstBus !== undefined && r.firstBus <= nowMin) || transferEnded(r));
       // 같은 정류장에서 같은 버스를 타고 갈아타지 않고 가는 후보가 더 빠르거나 같으면, 중간에 갈아타는 후보는 뺀다 (355번 그대로 vs 아라초 환승)
