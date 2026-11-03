@@ -44,6 +44,7 @@ export default function RouteMap({ from, to, rides, walkPath, bus, me, heading }
   const box = useRef<HTMLDivElement>(null);
   const map = useRef<Kakao>(null);
   const drawn = useRef<Kakao[]>([]);
+  const fitted = useRef(''); // 지도 범위를 맞춘 경로. 30초 갱신은 같은 경로라 사용자가 확대·이동한 화면을 그대로 둔다
   const [err, setErr] = useState('');
   const [ready, setReady] = useState(false); // 지도가 만들어진 뒤에 움직이는 표시를 그림
 
@@ -62,10 +63,14 @@ export default function RouteMap({ from, to, rides, walkPath, bus, me, heading }
         ...segs.map((s) => new maps.Polyline({ map: map.current, path: s.path.map(ll), strokeWeight: s.bus ? 5 : 3, strokeColor: s.bus ? accent : '#857f74', strokeOpacity: 0.9, strokeStyle: s.bus ? 'solid' : 'shortdash' })),
         ...list.map((m) => new maps.CustomOverlay({ map: map.current, position: ll(m.pt), yAnchor: 1.2, content: `<div class="pin ${m.kind}">${m.label}</div>` })),
       ];
-      const bounds = new maps.LatLngBounds();
-      list.forEach((m) => bounds.extend(ll(m.pt)));
-      segs.forEach((s) => s.path.forEach((p) => bounds.extend(ll(p))));
-      map.current.setBounds(bounds, 40, 30, 30, 30);
+      const sig = JSON.stringify(list.map((m) => [m.label, m.pt.lat, m.pt.lng]));
+      if (sig !== fitted.current) {
+        fitted.current = sig;
+        const bounds = new maps.LatLngBounds();
+        list.forEach((m) => bounds.extend(ll(m.pt)));
+        segs.forEach((s) => s.path.forEach((p) => bounds.extend(ll(p))));
+        map.current.setBounds(bounds, 40, 30, 30, 30);
+      }
       setReady(true);
     }).catch((e) => setErr(e.message));
     return () => { alive = false; };
