@@ -377,7 +377,7 @@ export default function Home() {
     }
   }
 
-  const restored = useRef(false), pinBoot = useRef(false);
+  const restored = useRef(false), pinBoot = useRef(false), lastTo = useRef<Place | null>(null);
   useEffect(() => {
     const p = loadPinned(), t = loadTrip();
     if (p) {
@@ -391,11 +391,16 @@ export default function Home() {
   }, []);
   useEffect(() => {
     if (restored.current) try { sessionStorage.setItem(SAVED, JSON.stringify({ from, to })); } catch {}
+    const sameTo = lastTo.current === to;
+    lastTo.current = to;
     // 되살린 고른 경로는 새로 찾지 않고 갱신만 한다 (새로 찾으면 고른 경로가 풀림)
     if (pinBoot.current) {
       if (pin) (pinBoot.current = false), (live.current = true), plan(true); // 첫 렌더(아직 pin 전)에는 아무것도 안 함: plan()이 되살린 경로를 지움
       return;
     }
+    // 따라가는 중에 "현재 위치"만 다시 받으면(도착지 그대로) 새 검색이 아니다: 고른 경로를 유지하고 새 위치로 갱신만 한다.
+    // 예전에는 새 검색으로 처리해 따라가기가 풀렸다 (2026-11-03 사용자 실측)
+    if ((pinRef.current || selRef.current || frozenRef.current) && from?.name === '현재 위치' && sameTo) return void plan(true);
     plan();
   }, [from, to]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
