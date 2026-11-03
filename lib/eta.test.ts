@@ -91,3 +91,12 @@ test('환승 버스도 실시간 버스가 있으면 그 버스를 탄다', () =
   assert.equal(r.boards[1].how, 'realtime');
   assert.equal(r.min, 43);
 });
+
+test('실시간상 오는 버스가 없으면 시간표 버스는 안 쓰고 아직 출발 안 한 버스만', () => {
+  // 292번 남주동: 실시간 [] (방금 지나감), 시간표 2분 뒤(지나간 그 차)·142분 뒤(아직 기점 출발 전)
+  const leg = { walkBeforeMin: 0, nextBusesMin: [], timetableMin: [2, 142], pendingMin: [142], rideMin: 13 };
+  assert.equal(arrivalMin({ legs: [leg], walkAfterMin: 13 })!.boards[0].at, 142);
+  // 실시간 조회 자체가 안 됐으면(nextBusesMin 없음) 시간표
+  const { nextBusesMin, ...noLive } = leg;
+  assert.equal(arrivalMin({ legs: [noLive], walkAfterMin: 13 })!.boards[0].at, 2);
+});

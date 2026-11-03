@@ -84,10 +84,11 @@ export function applyRealtime(route: Route, results: PlanResults, headways: Head
     for (const id of ride.routeIds) { const v = results[`${id}:${ride.stationId}`]; if (Array.isArray(v)) for (const n of v) src.push([n * perStop, id]); }
     if (src.length) Object.assign(next, { src });
     if (!mins.length && found.length && i === 0) noBusNow = true;
-    return mins.length ? { ...next, nextBusesMin: mins } : next;
+    // 실시간 조회가 됐으면 오는 버스가 없어도 빈 배열로 넘긴다: "실시간 없음"과 "실시간상 오는 버스 없음"은 다르다 (lib/eta.ts)
+    return found.length ? { ...next, nextBusesMin: mins } : next;
   });
   const firsts = keys(route.rides[0]).map((k) => sched.firstBus?.[k]).filter((v) => v !== undefined);
-  const firstBus = !legs[0].nextBusesMin && !legs[0].timetableMin && firsts.length ? Math.min(...firsts) : undefined;
+  const firstBus = !legs[0].nextBusesMin?.length && !legs[0].timetableMin && firsts.length ? Math.min(...firsts) : undefined;
   return { ...route, candidate: { ...route.candidate, legs }, ...(noBusNow ? { noBusNow } : {}), ...(firstBus !== undefined ? { firstBus } : {}) };
 }
 

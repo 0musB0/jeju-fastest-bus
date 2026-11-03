@@ -23,15 +23,18 @@ export function arrivalMin(c: Candidate): { min: number; source: WaitSource; boa
   for (const [i, leg] of c.legs.entries()) {
     const atStop = t + leg.walkBeforeMin;
     // 환승 버스도 실시간 위치가 있으면 쓴다 (시간표가 낡았거나 빠진 노선: 292번 시간표는 하루 7회인데 실제로 더 다님, 2026-11-01)
-    const buses = leg.nextBusesMin ?? [];
+    // nextBusesMin이 빈 배열 = 실시간 조회는 됐는데 오는 버스가 없음. 그때 시간표 버스는 이미 지나갔거나 안 다니는 차라 쓰지 않고,
+    // 아직 기점을 떠나지 않은 버스(pending)만 쓴다. 예전에는 빈 실시간을 "실시간 없음"으로 봐서 방금 지나간 버스를
+    // 시간표로 "3분 뒤 도착"이라고 했다 (292번 남주동, 그 차에 이미 탄 상태, 2026-11-03 사용자 실측)
+    const live = leg.nextBusesMin, buses = live ?? [];
     // 환승 버스는 3분 이상 여유가 있어야 탈 수 있다고 본다 (빠듯한 환승은 다음 차로 계산)
     const canBoard = (b: number) => b >= atStop + (i === 0 ? BOARD_MARGIN_MIN : TRANSFER_MARGIN_MIN);
     const bus = buses.find(canBoard);
     // 실시간이 기준이다 (사용자 요청 2026-11-02). 시간표는 실시간에 안 보이는 버스, 곧 아직 기점을 떠나지 않은 버스(pending)에만 쓰고,
     // 실시간 위치를 못 받은 구간에서만 시간표 전체를 쓴다. 환승 구간도 같다.
-    const pend = buses.length ? leg.pendingMin?.find(canBoard) : undefined;
+    const pend = live ? leg.pendingMin?.find(canBoard) : undefined;
     // 실시간 버스를 다 못 타면 그 뒤 시간표 버스 (시간표의 출발 순번 어림이 틀려 pending에서 빠진 버스 대비)
-    const scheduled = leg.timetableMin?.find((b) => canBoard(b) && (!buses.length || b > buses[buses.length - 1]));
+    const scheduled = leg.timetableMin?.find((b) => canBoard(b) && (!live || (buses.length > 0 && b > buses[buses.length - 1])));
     let board: number;
     let how: Board['how'] = 'timetable';
     if (bus !== undefined && !(pend !== undefined && pend < bus)) (board = bus), (how = 'realtime');
