@@ -1,6 +1,6 @@
 import { revalidateTag } from 'next/cache';
 import { headwayMin, parseBusLocation, stopsAway } from '@/lib/realtime';
-import { distM, findTrips, indexData, maskOffShape, legPath, roughRide, type Station, type BusRoute, type RideMin, type Shapes } from '@/lib/direct';
+import { distM, findTrips, indexData, maskOffShape, legPath, roughRide, type Station, type BusRoute, type RideMin, type Shapes, type Trip } from '@/lib/direct';
 import shapeData from '@/data/shapes.json';
 import stationList from '@/data/stations.json';
 import routeList from '@/data/routes.json';
@@ -31,7 +31,10 @@ const rideMin: RideMin = (r, i, j) => {
 let walker: Walker | undefined;
 try { walker = walkGraph(JSON.parse(readFileSync(join(process.cwd(), 'data', 'walk.json'), 'utf8'))); } catch { walker = undefined; }
 const ID = /^\d{9}$/;
-const MAX_ROUTES = 10; // 실시간 조회 노선 수
+// 실시간 조회 노선 수. 10개일 때 첫 구간 가지 노선만으로 다 차서 환승 구간은 늘 시간표였다 (공항→중문 39개 후보, 2026-11-03)
+const MAX_ROUTES = 16;
+const RT_BUDGET_MS = 6000; // 이 시간이 지나면 남은 노선은 조회하지 않는다 (제주 서버가 느릴 때 응답이 늘어지지 않게)
+const TOP_TRIPS = 6; // 실시간을 먼저 채울 상위 후보 수 (화면에는 3개, 갱신 때 순위가 바뀌는 것 대비)
 const MAX_PAIRS = 60; // 시간표는 로컬 데이터라 더 많이 본다
 const CONCURRENCY = 2;
 
@@ -61,14 +64,14 @@ export async function GET(req: Request) {
   // q = ODsay 경로의 첫 버스, later = 환승 버스 (환승 버스는 시간표만 쓰므로 실시간 조회는 안 함)
   const parse = (v: string | null) => (v ?? '').split(',').map((x) => x.split(':'))
     .filter(([r, s]) => ID.test(r ?? '') && !!routeById.get(r)?.stops.includes(s)).slice(0, MAX_PAIRS);
-  // pin = 화면에서 따라가는 경로의 구간들: 실시간 10칸에 가장 먼저 넣는다 (타고 가는 중에도 환승 버스를 실시간으로)
+  // pin = 화면에서 따라가는 경로의 구간들: 실시간 칸에 가장 먼저 넣는다 (타고 가는 중에도 환승 버스를 실시간으로)
   const pairs = parse(p.get('q')), laterPairs = parse(p.get('later')), pinPairs = parse(p.get('pin'));
   const from = point(p.get('from')), to = point(p.get('to'));
   const trips = from && to ? findTrips(from, to, index, rideMin, 20, walker) : [];
   const tripFirst = trips.flatMap((t) => t.legs[0].routeIds.map((r) => [r, t.legs[0].fromId]));
   const tripLater = trips.flatMap((t) => t.legs.slice(1).flatMap((l) => l.routeIds.map((r) => [r, l.fromId])));
 
-  // 실시간 10칸: ODsay 첫 버스, 우리 후보의 첫 구간, 우리 후보의 환승 구간, ODsay 환승 버스 순.
+  // 실시간 칸(MAX_ROUTES): 따라가는 경로, ODsay 첫 버스, 상위 후보의 첫 구간·환승 구간, ODsay 환승 버스, 나머지 후보 순.
   // 한 정류장에 같은 번호의 가지 노선이 여럿 서면(201-12·201-14·201-20, 212-2·212-4) 버스 위치는 가지 노선마다 따로 온다.
   // 그래서 구간마다 60분 안에 올 가지 노선을 3개까지 차례로 넣는다. 같은 구간은 한 번만.
   // 한 구간의 노선은 시간표상 곧 오는 것부터 조회한다. 예전에는 목록 첫 노선만 봐서 밤에만 다니는 201-18을 아침에 조회하고,
@@ -84,19 +87,21 @@ export async function GET(req: Request) {
   const grouped = (ps: string[][]) => [...Map.groupBy(ps, ([r, st]) => `${st}:${routeById.get(r)?.no.split('-')[0]}`).values()]
     .flatMap((g) => legIds(g.map(([r]) => r), g[0][1]));
   const routeIds: string[] = [];
-  // 첫 버스가 먼저: 우리 후보의 첫 구간 전부 → 환승 구간 순 (환승 구간을 순위대로 넣으면 3위 후보의 첫 버스가 10칸에서 밀렸다)
-  const firstIds = trips.flatMap((t) => legIds(t.legs[0].routeIds, t.legs[0].fromId));
-  const laterIds = trips.flatMap((t) => t.legs.slice(1).flatMap((l) => legIds(l.routeIds, l.fromId)));
-  for (const r of [...grouped(pinPairs), ...grouped(pairs), ...firstIds, ...laterIds, ...grouped(laterPairs)]) {
+  // 상위 후보는 환승 구간까지 실시간으로 (첫 구간 전부를 먼저 넣으면 환승 구간이 칸에 못 들었다), 나머지 후보는 그다음
+  const firstIds = (ts: Trip[]) => ts.flatMap((t) => legIds(t.legs[0].routeIds, t.legs[0].fromId));
+  const laterIds = (ts: Trip[]) => ts.flatMap((t) => t.legs.slice(1).flatMap((l) => legIds(l.routeIds, l.fromId)));
+  const top = trips.slice(0, TOP_TRIPS), rest = trips.slice(TOP_TRIPS);
+  for (const r of [...grouped(pinPairs), ...grouped(pairs), ...firstIds(top), ...laterIds(top), ...grouped(laterPairs), ...firstIds(rest), ...laterIds(rest)]) {
     if (routeIds.length < MAX_ROUTES && !routeIds.includes(r)) routeIds.push(r);
   }
-  const allPairs = [...pinPairs, ...pairs, ...tripFirst, ...laterPairs, ...tripLater].filter(([r]) => routeIds.includes(r));
   // 제주 서버는 동시에 여러 개를 보내면 전부 3초를 넘긴다(실측). 2개씩 나눠 보낸다.
   const locs = new Map<string, Awaited<ReturnType<typeof busLocation>>>();
-  for (let i = 0; i < routeIds.length; i += CONCURRENCY) {
+  const t0 = Date.now();
+  for (let i = 0; i < routeIds.length && Date.now() - t0 < RT_BUDGET_MS; i += CONCURRENCY) {
     await Promise.all(routeIds.slice(i, i + CONCURRENCY).map(async (r) => locs.set(r, await busLocation(r))));
   }
 
+  const allPairs = [...pinPairs, ...pairs, ...tripFirst, ...laterPairs, ...tripLater].filter(([r]) => locs.has(r));
   const results: Record<string, number[] | { error: string }> = {};
   for (const [r, s] of allPairs) {
     const loc = locs.get(r)!;
