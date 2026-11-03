@@ -417,12 +417,16 @@ export default function Home() {
     } catch {}
   }, [pin, held, at]); // eslint-disable-line react-hooks/exhaustive-deps
   // 자동 갱신: 화면을 보고 있을 때만 30초마다 (서버의 실시간 캐시가 20초). 돌아왔다고 바로 다시 계산하지는 않는다.
-  // 따라가는 동안(누른 경로 또는 탄 상태) 내 위치를 계속 받는다. 위치 권한을 거부하면 표시만 안 함
+  // 경로 지도가 떠 있는 동안 내 위치를 계속 받는다 (따라가기 여부와 상관없이). 한 번 실패해도 마지막 위치는 그대로 둔다
+  const hasMap = !!(from && to && routes.length);
   useEffect(() => {
-    if (!(pin || held) || !navigator.geolocation) return setMe(undefined);
-    const w = navigator.geolocation.watchPosition((p) => setMe({ lat: p.coords.latitude, lng: p.coords.longitude }), () => setMe(undefined), { enableHighAccuracy: true, maximumAge: 10_000 });
+    if (!hasMap || !navigator.geolocation) return;
+    const set = (p: GeolocationPosition) => setMe({ lat: p.coords.latitude, lng: p.coords.longitude });
+    const opt = { enableHighAccuracy: true, maximumAge: 10_000, timeout: 20_000 };
+    navigator.geolocation.getCurrentPosition(set, () => {}, opt); // 가만히 있으면 watch가 늦게 오는 폰이 있어 바로 한 번
+    const w = navigator.geolocation.watchPosition(set, () => {}, opt);
     return () => navigator.geolocation.clearWatch(w);
-  }, [pin, held]);
+  }, [hasMap]);
   useEffect(() => {
     const id = setInterval(() => { if (document.visibilityState === 'visible') plan(true); }, 30_000);
     return () => clearInterval(id);
