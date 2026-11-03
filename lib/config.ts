@@ -10,6 +10,7 @@ export const SLOW_M = 150; // 시간표 기준점 사이가 분당 이 거리(m)
 
 // 카카오 검색을 제주로 제한하는 사각형 (서경,남위,동경,북위)
 export const JEJU_RECT = '126.08,33.10,127.00,33.60';
+export const BOARDED_M = 150; // 타려던 버스가 지나갈 때 내 위치(GPS)가 승차 정류장에서 이 안이면 탄 것으로 보고 따라가기로 바꾼다
 export const TRANSFER_M = 200; // 갈아탈 때 걸어서 옮길 수 있는 정류장 거리
 export const TRANSFER_PENALTY_MIN = 10; // 우리 데이터로 찾은 환승 경로의 순위용 대기 어림값 (실제 대기는 시간표로 다시 계산)
 export const SHORT_HOP_M = 1500; // 버스 세 대 경로에서 가운데 구간이 이보다 짧으면(1~2분 탑승) 사람이 타지 않는 경로로 보고 뺀다

@@ -61,7 +61,7 @@ export default function RouteMap({ from, to, rides, walkPath, bus, me, heading }
       const { list, segs } = marks(from, to, rides, walkPath);
       drawn.current = [
         ...segs.map((s) => new maps.Polyline({ map: map.current, path: s.path.map(ll), strokeWeight: s.bus ? 5 : 3, strokeColor: s.bus ? accent : '#857f74', strokeOpacity: 0.9, strokeStyle: s.bus ? 'solid' : 'shortdash' })),
-        ...list.map((m) => new maps.CustomOverlay({ map: map.current, position: ll(m.pt), yAnchor: 1.2, content: `<div class="pin ${m.kind}">${m.label}</div>` })),
+        ...list.map((m) => new maps.CustomOverlay({ map: map.current, position: ll(m.pt), yAnchor: 1.2, zIndex: 5, content: `<div class="pin ${m.kind}">${m.label}</div>` })),
       ];
       const sig = JSON.stringify(list.map((m) => [m.label, m.pt.lat, m.pt.lng]));
       if (sig !== fitted.current) {
