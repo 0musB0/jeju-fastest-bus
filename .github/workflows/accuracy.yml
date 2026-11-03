@@ -5,6 +5,9 @@ on:
       minutes:
         description: 추적 시간(분)
         default: '60'
+      script:
+        description: accuracy(대기 예측) 또는 ridetime(탑승 시간 실측)
+        default: accuracy
 jobs:
   track:
     runs-on: ubuntu-latest
@@ -14,4 +17,4 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: node scripts/accuracy.mjs ${{ inputs.minutes }}
+      - run: node --experimental-strip-types scripts/${{ inputs.script }}.mjs ${{ inputs.minutes }}

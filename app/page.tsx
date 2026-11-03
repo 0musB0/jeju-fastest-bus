@@ -214,7 +214,10 @@ export default function Home() {
   // 따라가는 경로의 구간 키: 타기 전이면 모든 구간, 탄 뒤면 환승 구간만 (서버가 실시간을 먼저 조회)
   function pinKeys(): string[] {
     const r = frozenRef.current?.r ?? routesRef.current.find((x) => routeKey(x) === pinRef.current);
-    return r && pinRef.current ? [...(heldRef.current ? [] : rideKeys([r], true)), ...rideKeys([r], false)].slice(0, 12) : [];
+    // 탄 뒤에는 지금 탄 버스의 내릴 정류장도: 내 버스가 늦는지 실제 위치로 본다 (lib/follow.ts onBus)
+    const on = frozenRef.current && r?.rides[frozenRef.current.k - 1];
+    const off = on?.endStationId ? on.routeIds.filter(Boolean).map((id) => `${id}:${on.endStationId}`) : [];
+    return r && pinRef.current ? [...off, ...(heldRef.current ? [] : rideKeys([r], true)), ...rideKeys([r], false)].slice(0, 12) : [];
   }
   async function plan(refresh = false) {
     if (refresh && !live.current) return;
