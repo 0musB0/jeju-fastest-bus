@@ -45,6 +45,7 @@ export default function RouteMap({ from, to, rides, walkPath, bus, me }: { from:
   const map = useRef<Kakao>(null);
   const drawn = useRef<Kakao[]>([]);
   const [err, setErr] = useState('');
+  const [ready, setReady] = useState(false); // 지도가 만들어진 뒤에 움직이는 표시를 그림
 
   useEffect(() => {
     if (!KEY) return;
@@ -65,6 +66,7 @@ export default function RouteMap({ from, to, rides, walkPath, bus, me }: { from:
       list.forEach((m) => bounds.extend(ll(m.pt)));
       segs.forEach((s) => s.path.forEach((p) => bounds.extend(ll(p))));
       map.current.setBounds(bounds, 40, 30, 30, 30);
+      setReady(true);
     }).catch((e) => setErr(e.message));
     return () => { alive = false; };
   }, [from, to, rides]);
@@ -74,7 +76,7 @@ export default function RouteMap({ from, to, rides, walkPath, bus, me }: { from:
   useEffect(() => {
     if (!KEY) return;
     loadSdk().then((kakao) => {
-      if (!map.current) return; // 지도가 아직이면 다음 갱신 때 그림
+      if (!map.current) return; // 지도가 아직이면 ready가 바뀔 때 다시 그림
       const { maps } = kakao;
       live.current.forEach((o) => o.setMap(null));
       live.current = [
@@ -82,7 +84,7 @@ export default function RouteMap({ from, to, rides, walkPath, bus, me }: { from:
         ...(me ? [new maps.CustomOverlay({ map: map.current, position: new maps.LatLng(me.lat, me.lng), zIndex: 4, content: '<img class="me" src="/icon.svg" alt="내 위치">' })] : []),
       ];
     }).catch(() => {});
-  }, [bus?.lat, bus?.lng, me?.lat, me?.lng, rides]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [ready, bus?.lat, bus?.lng, me?.lat, me?.lng, rides]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!KEY) return null;
   return err ? <p className="warn">{err}</p> : <div ref={box} className="map" role="img" aria-label="경로 지도" />;
