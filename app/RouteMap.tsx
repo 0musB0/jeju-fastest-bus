@@ -39,8 +39,8 @@ function marks(from: Pt, to: Pt, rides: Ride[], walkPath?: Pt[]): { list: Mark[]
   return { list, segs };
 }
 
-// bus = 탄 버스의 지금 위치 (따라가는 중, 실시간)
-export default function RouteMap({ from, to, rides, walkPath, bus }: { from: Pt; to: Pt; rides: Ride[]; walkPath?: Pt[]; bus?: Pt }) {
+// bus = 탄 버스의 지금 위치 (따라가는 중, 실시간), me = 내 위치 (따라가는 중 GPS)
+export default function RouteMap({ from, to, rides, walkPath, bus, me }: { from: Pt; to: Pt; rides: Ride[]; walkPath?: Pt[]; bus?: Pt; me?: Pt }) {
   const box = useRef<HTMLDivElement>(null);
   const map = useRef<Kakao>(null);
   const drawn = useRef<Kakao[]>([]);
@@ -60,7 +60,6 @@ export default function RouteMap({ from, to, rides, walkPath, bus }: { from: Pt;
       drawn.current = [
         ...segs.map((s) => new maps.Polyline({ map: map.current, path: s.path.map(ll), strokeWeight: s.bus ? 5 : 3, strokeColor: s.bus ? accent : '#857f74', strokeOpacity: 0.9, strokeStyle: s.bus ? 'solid' : 'shortdash' })),
         ...list.map((m) => new maps.CustomOverlay({ map: map.current, position: ll(m.pt), yAnchor: 1.2, content: `<div class="pin ${m.kind}">${m.label}</div>` })),
-        ...(bus ? [new maps.CustomOverlay({ map: map.current, position: ll(bus), yAnchor: 1.2, zIndex: 3, content: '<div class="pin bus">탄 버스</div>' })] : []),
       ];
       const bounds = new maps.LatLngBounds();
       list.forEach((m) => bounds.extend(ll(m.pt)));
@@ -68,7 +67,22 @@ export default function RouteMap({ from, to, rides, walkPath, bus }: { from: Pt;
       map.current.setBounds(bounds, 40, 30, 30, 30);
     }).catch((e) => setErr(e.message));
     return () => { alive = false; };
-  }, [from, to, rides, bus?.lat, bus?.lng]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [from, to, rides]);
+
+  // 움직이는 표시(탄 버스, 내 위치)는 따로: 30초·GPS마다 지도 범위를 다시 맞추면 사용자가 옮긴 화면이 튄다
+  const live = useRef<Kakao[]>([]);
+  useEffect(() => {
+    if (!KEY) return;
+    loadSdk().then((kakao) => {
+      if (!map.current) return; // 지도가 아직이면 다음 갱신 때 그림
+      const { maps } = kakao;
+      live.current.forEach((o) => o.setMap(null));
+      live.current = [
+        ...(bus ? [new maps.CustomOverlay({ map: map.current, position: new maps.LatLng(bus.lat, bus.lng), yAnchor: 1.2, zIndex: 3, content: '<div class="pin bus">탄 버스</div>' })] : []),
+        ...(me ? [new maps.CustomOverlay({ map: map.current, position: new maps.LatLng(me.lat, me.lng), zIndex: 4, content: '<img class="me" src="/icon.svg" alt="내 위치">' })] : []),
+      ];
+    }).catch(() => {});
+  }, [bus?.lat, bus?.lng, me?.lat, me?.lng, rides]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!KEY) return null;
   return err ? <p className="warn">{err}</p> : <div ref={box} className="map" role="img" aria-label="경로 지도" />;
