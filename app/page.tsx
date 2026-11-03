@@ -197,7 +197,7 @@ export default function Home() {
   const [msg, setMsg] = useState('');
   const [rtDown, setRtDown] = useState(false); // 실시간 서버가 응답하지 않아 시간표로만 계산했는지
   const [opened, setOpened] = useState<string[]>([]); // 버스 번호를 다 펼친 경로
-  const [selKey, setSelKey] = useState(''); // 고른 경로: 30초 갱신으로 순서가 바뀌어도 같은 경로를 따라간다
+  const [selKey, setSelKey] = useState(''); // 고른 경로: 20초 갱신으로 순서가 바뀌어도 같은 경로를 따라간다
   const [held, setHeld] = useState(false); // 고른 경로가 갱신 결과에서 빠져 화면을 고정한 상태
   const [walkMin, setWalkMin] = useState<number | null>(null); // 버스 없이 걸어가는 시간(3km 안)
   const [walkPath, setWalkPath] = useState<Pt[] | undefined>(undefined);
@@ -220,7 +220,7 @@ export default function Home() {
   const live = useRef(false); // 결과가 화면에 있을 때만 자동 갱신
   const pathsRef = useRef(new Map<string, Trip['legs'][number]['path']>()); // 우리 경로의 지도 선: 처음 받은 것을 갱신 때도 쓴다
 
-  // 출발·도착이 바뀌면 ODsay로 경로 후보를 받고, 30초마다 실시간·시간표만 다시 계산한다.
+  // 출발·도착이 바뀌면 ODsay로 경로 후보를 받고, 20초마다 실시간·시간표만 다시 계산한다.
   // 따라가는 경로의 구간 키: 타기 전이면 모든 구간, 탄 뒤면 환승 구간만 (서버가 실시간을 먼저 조회)
   function pinKeys(): string[] {
     const fk = pinRef.current; // 따라가는 경로
@@ -417,7 +417,7 @@ export default function Home() {
       else if (restored.current && !pinBoot.current) localStorage.removeItem(PINNED);
     } catch {}
   }, [pin, held, at]); // eslint-disable-line react-hooks/exhaustive-deps
-  // 자동 갱신: 화면을 보고 있을 때만 30초마다 (서버의 실시간 캐시가 20초). 돌아왔다고 바로 다시 계산하지는 않는다.
+  // 자동 갱신: 화면을 보고 있을 때만 20초마다 (서버의 실시간 캐시도 20초라 이보다 자주 불러도 새 값이 없음, 사용자 요청 2026-11-03). 돌아왔다고 바로 다시 계산하지는 않는다.
   // 경로 지도가 떠 있는 동안 내 위치를 계속 받는다 (따라가기 여부와 상관없이). 한 번 실패해도 마지막 위치는 그대로 둔다
   const hasMap = !!(from && to);
   useEffect(() => {
@@ -449,7 +449,7 @@ export default function Home() {
     return () => { window.removeEventListener('pointerdown', tap); window.removeEventListener('deviceorientationabsolute', on as EventListener); window.removeEventListener('deviceorientation', on as EventListener); };
   }, [hasMap]);
   useEffect(() => {
-    const id = setInterval(() => { if (document.visibilityState === 'visible') plan(true); }, 30_000);
+    const id = setInterval(() => { if (document.visibilityState === 'visible') plan(true); }, 20_000);
     return () => clearInterval(id);
   }, [from, to]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -475,11 +475,11 @@ export default function Home() {
       {at && routes.length > 0 && (
         <div className="meta">
           <span><span className="num">{kstClock(at)}</span> 기준 · 도착이 빠른 순</span>
-          <span className="muted">{held ? '고른 경로 유지 중' : '30초마다 자동 갱신'}</span>
+          <span className="muted">{held ? '고른 경로 유지 중' : '20초마다 자동 갱신'}</span>
         </div>
       )}
-      {at && held && !pin && <p className="muted">타려던 버스가 정류장을 지나서 탄 것으로 봐요. 탄 버스 위치와 갈아탈 버스를 30초마다 실시간으로 다시 계산해요. 새로 찾으려면 출발지를 다시 고르세요.</p>}
-      {at && pin && <p className="muted">{held ? '타려던 버스가 정류장을 지나서 탄 것으로 봐요. 탄 버스 위치와 갈아탈 버스를 계속 실시간으로 다시 계산해요.' : '맨 위 경로를 따라가요. 타려던 버스가 지나가면 그때 계산으로 고정해요.'} 아래는 30초마다 새로 찾은 경로예요.</p>}
+      {at && held && !pin && <p className="muted">타려던 버스가 정류장을 지나서 탄 것으로 봐요. 탄 버스 위치와 갈아탈 버스를 20초마다 실시간으로 다시 계산해요. 새로 찾으려면 출발지를 다시 고르세요.</p>}
+      {at && pin && <p className="muted">{held ? '타려던 버스가 정류장을 지나서 탄 것으로 봐요. 탄 버스 위치와 갈아탈 버스를 계속 실시간으로 다시 계산해요.' : '맨 위 경로를 따라가요. 타려던 버스가 지나가면 그때 계산으로 고정해요.'} 아래는 20초마다 새로 찾은 경로예요.</p>}
       {at && routes.length > 0 && rtDown && <p className="warn">실시간 버스 위치를 받지 못해 일부는 시간표로 계산했어요.</p>}
       {walkFirst && (
         <article className={`box result best${walkSel ? ' sel' : ''}`} role="button" tabIndex={0} aria-pressed={walkSel} onClick={() => setSelKey('walk')}

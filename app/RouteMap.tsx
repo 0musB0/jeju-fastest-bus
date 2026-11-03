@@ -44,7 +44,7 @@ export default function RouteMap({ from, to, rides, walkPath, bus, me, heading }
   const box = useRef<HTMLDivElement>(null);
   const map = useRef<Kakao>(null);
   const drawn = useRef<Kakao[]>([]);
-  const fitted = useRef(''); // 지도 범위를 맞춘 경로. 30초 갱신은 같은 경로라 사용자가 확대·이동한 화면을 그대로 둔다
+  const fitted = useRef(''); // 지도 범위를 맞춘 경로. 20초 갱신은 같은 경로라 사용자가 확대·이동한 화면을 그대로 둔다
   const [err, setErr] = useState('');
   const [ready, setReady] = useState(false); // 지도가 만들어진 뒤에 움직이는 표시를 그림
 
@@ -76,7 +76,7 @@ export default function RouteMap({ from, to, rides, walkPath, bus, me, heading }
     return () => { alive = false; };
   }, [from, to, rides]);
 
-  // 움직이는 표시(탄 버스, 내 위치)는 따로: 30초·GPS마다 지도 범위를 다시 맞추면 사용자가 옮긴 화면이 튄다
+  // 움직이는 표시(탄 버스, 내 위치)는 따로: 20초·GPS마다 지도 범위를 다시 맞추면 사용자가 옮긴 화면이 튄다
   const live = useRef<Kakao[]>([]);
   useEffect(() => {
     if (!KEY) return;

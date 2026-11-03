@@ -150,7 +150,7 @@ export async function GET(req: Request) {
     const [r, s, n] = k.split(':'), route = routeById.get(r), i = route?.stops.indexOf(s) ?? -1, j = i + Number(n);
     if (route && i >= 0 && Number.isInteger(Number(n)) && Number(n) > 0 && j < route.stops.length) paths[k] = legPath(index, route, i, j);
   }
-  // lite = 30초 자동 갱신: 지도 선은 처음 받은 것을 화면이 그대로 쓴다
+  // lite = 20초 자동 갱신: 지도 선은 처음 받은 것을 화면이 그대로 쓴다
   // 한 구간에 묶인 노선마다 정류장 수가 다르다(급행 111은 8개, 같은 구간 212는 56개). 화면은 실제로 탈 버스의 수를 보여준다
   // 어디 방면: 카카오맵처럼 탈 정류장 다음 정류장 이름 (길 건너 같은 이름 정류장과 헷갈리지 않게)
   for (const t of trips) for (const l of t.legs) {
