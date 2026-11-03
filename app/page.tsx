@@ -202,7 +202,8 @@ export default function Home() {
   const [walkMin, setWalkMin] = useState<number | null>(null); // 버스 없이 걸어가는 시간(3km 안)
   const [walkPath, setWalkPath] = useState<Pt[] | undefined>(undefined);
   const [pos, setPos] = useState<Record<string, Record<number, Pt & { name: string }>>>({}); // 따라가는 구간 버스 위치 (남은 정류장 수 → 정류장)
-  const [me, setMe] = useState<Pt | undefined>(undefined); // 따라가는 동안 내 위치 (GPS, 지도에만 표시)
+  const [me, setMe] = useState<Pt | undefined>(undefined); // 내 위치 (GPS, 지도에만 표시)
+  const [heading, setHeading] = useState<number | undefined>(undefined); // 내가 바라보는 방향 (북쪽 0°, 시계 방향)
   const busAt = (r: Ranked) => (r.bus ? pos[r.bus.key]?.[r.bus.left] : undefined); // 탄 버스가 지금 있는 정류장
   const [pin, setPin] = useState(''); // "이 경로로 갈게요"로 고른 경로: 갱신 때 이 경로만 보여준다
   const sinceRef = useRef(0); // 따라가기를 누른 시각(ms): 그때부터 정류장으로 걸어간다고 봄
@@ -418,14 +419,34 @@ export default function Home() {
   }, [pin, held, at]); // eslint-disable-line react-hooks/exhaustive-deps
   // 자동 갱신: 화면을 보고 있을 때만 30초마다 (서버의 실시간 캐시가 20초). 돌아왔다고 바로 다시 계산하지는 않는다.
   // 경로 지도가 떠 있는 동안 내 위치를 계속 받는다 (따라가기 여부와 상관없이). 한 번 실패해도 마지막 위치는 그대로 둔다
-  const hasMap = !!(from && to && routes.length);
+  const hasMap = !!(from && to);
   useEffect(() => {
     if (!hasMap || !navigator.geolocation) return;
-    const set = (p: GeolocationPosition) => setMe({ lat: p.coords.latitude, lng: p.coords.longitude });
+    const set = (p: GeolocationPosition) => {
+      setMe({ lat: p.coords.latitude, lng: p.coords.longitude });
+      if (p.coords.heading != null && !isNaN(p.coords.heading) && (p.coords.speed ?? 0) > 1) setHeading(p.coords.heading); // 움직일 때 GPS 진행 방향
+    };
     const opt = { enableHighAccuracy: true, maximumAge: 10_000, timeout: 20_000 };
     navigator.geolocation.getCurrentPosition(set, () => {}, opt); // 가만히 있으면 watch가 늦게 오는 폰이 있어 바로 한 번
     const w = navigator.geolocation.watchPosition(set, () => {}, opt);
     return () => navigator.geolocation.clearWatch(w);
+  }, [hasMap]);
+  // 나침반: 서 있을 때도 폰이 향한 방향. 아이폰은 webkitCompassHeading, 안드로이드는 deviceorientationabsolute의 alpha
+  // 아이폰은 권한을 화면을 누를 때만 물을 수 있어서, 지도가 뜬 뒤 첫 터치에 묻는다
+  useEffect(() => {
+    if (!hasMap || typeof DeviceOrientationEvent === 'undefined') return;
+    let last = -999, t = 0;
+    const on = (e: DeviceOrientationEvent & { webkitCompassHeading?: number }) => {
+      const h = e.webkitCompassHeading ?? (e.absolute && e.alpha != null ? 360 - e.alpha : undefined);
+      const now = Date.now();
+      if (h === undefined || now - t < 300 || Math.abs(((h - last + 540) % 360) - 180) < 5) return; // 0.3초·5° 넘게 바뀔 때만 (지도 표시를 너무 자주 다시 그리지 않게)
+      last = h; t = now; setHeading(h);
+    };
+    const start = () => { window.addEventListener('deviceorientationabsolute', on as EventListener); window.addEventListener('deviceorientation', on as EventListener); };
+    const ask = (DeviceOrientationEvent as unknown as { requestPermission?: () => Promise<string> }).requestPermission;
+    const tap = () => ask?.().then((r) => r === 'granted' && start()).catch(() => {});
+    if (ask) window.addEventListener('pointerdown', tap, { once: true }); else start();
+    return () => { window.removeEventListener('pointerdown', tap); window.removeEventListener('deviceorientationabsolute', on as EventListener); window.removeEventListener('deviceorientation', on as EventListener); };
   }, [hasMap]);
   useEffect(() => {
     const id = setInterval(() => { if (document.visibilityState === 'visible') plan(true); }, 30_000);
@@ -469,8 +490,8 @@ export default function Home() {
           </div>
         </article>
       )}
-      {from && to && walkSel && <RouteMap from={from} to={to} rides={[]} walkPath={walkPath} />}
-      {from && to && !walkSel && routes[sel] && <RouteMap from={from} to={to} rides={routes[sel].rides} bus={busAt(routes[sel])} me={me} />}
+      {from && to && walkSel && <RouteMap from={from} to={to} rides={[]} walkPath={walkPath} me={me} heading={heading} />}
+      {from && to && !walkSel && routes[sel] && <RouteMap from={from} to={to} rides={routes[sel].rides} bus={busAt(routes[sel])} me={me} heading={heading} />}
       {routes.map((r, i) => {
         const key = routeKey(r);
         const walk = r.candidate.legs.reduce((s, l) => s + l.walkBeforeMin, r.candidate.walkAfterMin);
