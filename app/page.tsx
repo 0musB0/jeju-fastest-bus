@@ -218,6 +218,7 @@ export default function Home() {
   const odsayRef = useRef<Route[] | null>(null); // 출발·도착이 같으면 ODsay 경로는 다시 부르지 않는다 (일일 한도)
   const reqId = useRef(0); // 새 검색마다 1씩 늘린다. 늦게 온 이전 검색·갱신 응답은 버린다.
   const live = useRef(false); // 결과가 화면에 있을 때만 자동 갱신
+  const placesRef = useRef<{ from: Place; to: Place } | null>(null); // 마지막으로 계산한 출발·도착 (따라가는 경로를 갱신·저장할 때)
   const pathsRef = useRef(new Map<string, Trip['legs'][number]['path']>()); // 우리 경로의 지도 선: 처음 받은 것을 갱신 때도 쓴다
 
   // 출발·도착이 바뀌면 ODsay로 경로 후보를 받고, 20초마다 실시간·시간표만 다시 계산한다.
@@ -236,14 +237,18 @@ export default function Home() {
     const stale = () => id !== reqId.current;
     // 고른 경로(누른 경로·카드로 고른 경로·탄 경로)는 새로 검색해도 사용자가 "따라가기 그만"이나 다른 카드를 누를 때까지 남긴다 (2026-11-03 사용자 요청)
     const kept = pinRef.current ? frozenRef.current?.r ?? routesRef.current.find((x) => routeKey(x) === pinRef.current) : undefined;
+    // 따라가는 중에 출발지·도착지를 "바꾸기"로 비워도 따라가는 경로는 그 경로의 출발·도착으로 계속 다시 계산한다
+    if (from && to) placesRef.current = { from, to };
+    const P = from && to ? { from, to } : kept ? placesRef.current : null;
     if (!refresh) {
       live.current = false;
       odsayRef.current = null;
       setRoutes(kept ? [kept] : []);
       if (!kept) setAt(null);
-      setMsg(from && to ? '경로 계산 중...' : '');
+      setMsg(P ? '경로 계산 중...' : '');
     }
-    if (!from || !to) return; // "바꾸기": 옛 결과를 지우고 끝
+    if (!P) return; // "바꾸기": 옛 결과를 지우고 끝 (따라가는 경로가 없을 때)
+    const { from: F, to: T } = P;
     try {
       // ODsay는 Web 키로 브라우저에서 직접 호출한다 (서버 호출 금지). SearchPathType=2: 버스만.
       // ODsay는 보조: 오류·한도 초과·무응답(5초)이어도 우리 데이터로 찾은 직행·환승 경로를 보여준다
@@ -252,7 +257,7 @@ export default function Home() {
         let parsed: ReturnType<typeof parseOdsay>;
         try {
           const body = await fetch(`https://api.odsay.com/v1/api/searchPubTransPathT?${new URLSearchParams({
-            SX: String(from.lng), SY: String(from.lat), EX: String(to.lng), EY: String(to.lat), SearchPathType: '2', apiKey: ODSAY_KEY,
+            SX: String(F.lng), SY: String(F.lat), EX: String(T.lng), EY: String(T.lat), SearchPathType: '2', apiKey: ODSAY_KEY,
           })}`, { signal: AbortSignal.timeout(5000) }).then((r) => r.json());
           parsed = parseOdsay(body);
         } catch {
@@ -274,7 +279,7 @@ export default function Home() {
         const pathKey = (x: Route['rides'][number]) => `${x.routeIds[0]}:${x.stationId}:${x.stops}`;
         const q = new URLSearchParams({ q: rideKeys(odsay, true).slice(0, 30).join(','), later: rideKeys(odsay, false).slice(0, 30).join(','), pin: pinKeys().join(','), stops: refresh ? '' : stopKeys(odsay).slice(0, 60).join(','),
           wf: refresh ? '' : [...new Set(odsay.map((o) => o.rides[0]?.stationId).filter(Boolean))].slice(0, 20).join(','),
-          wt: refresh ? '' : [...new Set(odsay.map((o) => o.rides.at(-1)?.endStationId).filter(Boolean))].slice(0, 20).join(','), from: `${from.lat},${from.lng}`, to: `${to.lat},${to.lng}`,
+          wt: refresh ? '' : [...new Set(odsay.map((o) => o.rides.at(-1)?.endStationId).filter(Boolean))].slice(0, 20).join(','), from: `${F.lat},${F.lng}`, to: `${T.lat},${T.lng}`,
           paths: refresh ? '' : [...new Set(odsay.slice(0, 6).flatMap((o) => o.rides.map(pathKey)))].join(','), ...(refresh ? { lite: '1' } : {}) });
         const r = await fetch(`/api/plan?${q}`).then((r) => r.json());
         results = r.results ?? {};
@@ -428,7 +433,8 @@ export default function Home() {
   useEffect(() => {
     try {
       const r = frozenRef.current?.r ?? routes.find((x) => routeKey(x) === pin);
-      if (pin && r && from && to && at) localStorage.setItem(PINNED, JSON.stringify({ from, to, r, t: frozenRef.current?.t ?? at.getTime(), held, k: frozenRef.current?.k ?? 1, since: sinceRef.current }));
+      const pl = placesRef.current;
+      if (pin && r && pl && at) localStorage.setItem(PINNED, JSON.stringify({ from: pl.from, to: pl.to, r, t: frozenRef.current?.t ?? at.getTime(), held, k: frozenRef.current?.k ?? 1, since: sinceRef.current }));
       else if (restored.current && !pinBoot.current) localStorage.removeItem(PINNED);
     } catch {}
   }, [pin, held, at]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -489,7 +495,7 @@ export default function Home() {
       {msg && <p className="muted">{msg}</p>}
       {at && routes.length > 0 && (
         <div className="meta">
-          <span><span className="num">{kstClock(at)}</span> 기준 · 도착이 빠른 순</span>
+          <span><span className="num">{kstClock(at)}</span> 기준 · {pin ? '따라가는 경로 먼저' : '도착이 빠른 순'}</span>
           <span className="muted">{held ? '고른 경로 유지 중' : '20초마다 자동 갱신'}</span>
         </div>
       )}
