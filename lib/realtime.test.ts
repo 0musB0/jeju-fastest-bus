@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseBusLocation, stopsAway } from './realtime.ts';
+import { parseBusLocation, minsAway, stopsAway } from './realtime.ts';
 
 const item = (id: string, ord: number, plate = 'null') => `<item><plateNo>${plate}</plateNo><stationId>${id}</stationId><stationOrd>${ord}</stationOrd></item>`;
 const xml = `<response><header><resultCode>00</resultCode></header><body><items>${[
@@ -81,4 +81,17 @@ test('우리 후보도 내릴 정류장 ID를 넘김 (탄 버스 위치를 내�
   const leg = { routeIds: ['405329203'], nos: ['292-3'], fromId: '405000043', fromName: '남주동', toId: '405000099', toName: '신성마을', stops: 18, walkBeforeMin: 1, rideMin: 13, distM: 9000, fromPt: p, toPt: p, path: [] };
   const [r] = tripsToRoutes([{ legs: [leg], walkAfterMin: 13, cost: 0 } as never], []);
   assert.equal(r.rides[0].endStationId, '405000099');
+});
+
+test('버스가 오는 구간이 느리면 정류장 수 × 평균이 아니라 시간표 소요로 잰다 (182번: 4정류장 앞이 12분)', () => {
+  const r = parseBusLocation(xml);
+  assert.ok(r.ok);
+  // 정류장 1~5의 기점 기준 소요: 앞 구간은 정류장당 3분, 뒤 구간은 1분
+  const off = (o: number) => [0, 0, 3, 6, 9, 10][o];
+  assert.deepEqual(minsAway(r.stops, 'E', off), [4, 10]); // 버스 C(3번): 10-6, 버스 A(1번): 10-0
+  const rt = { ...route, rides: [{ ...route.rides[0], routeIds: ['405136501'], stops: 4 }] };
+  // 정류장 수 기준(2정류장 × 12/4 = 6분)이 아니라 서버가 잰 분(4분)
+  const got = applyRealtime(rt, { '405136501:405000153': [2] }, {}, { rtMin: { '405136501:405000153': [11] } });
+  assert.deepEqual(got.candidate.legs[0].nextBusesMin, [11]);
+  assert.deepEqual(applyRealtime(rt, { '405136501:405000153': [2] }).candidate.legs[0].nextBusesMin, [6]);
 });

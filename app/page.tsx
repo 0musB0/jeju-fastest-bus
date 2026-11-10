@@ -288,7 +288,7 @@ export default function Home() {
         results = r.results ?? {};
         headways = r.headways ?? {};
         setPos(r.pos ?? {});
-        sched = { scheduled: r.scheduled, pending: r.pending, firstBus: r.firstBus };
+        sched = { rtMin: r.rtMin, scheduled: r.scheduled, pending: r.pending, firstBus: r.firstBus };
         trips = r.trips ?? [];
         walkAll = typeof r.walkAll === 'number' ? r.walkAll : null;
         if (!refresh) (setWalkMin(walkAll), setWalkPath(r.walkAllPath));

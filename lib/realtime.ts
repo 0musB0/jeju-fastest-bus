@@ -20,12 +20,21 @@ export function parseBusLocation(xml: string): BusLocation {
 
 // 우리 정류장까지 남은 정류장 수 (가까운 버스부터). 정류장이 노선에 없으면 null.
 export function stopsAway(loc: { stationId: string; ord: number; bus: boolean }[], stationId: string): number[] | null {
+  return ahead(loc, stationId, (from, to) => to - from);
+}
+
+// 같은 버스들이 우리 정류장까지 몇 분 걸리는지: 정류장 수가 아니라 시간표의 정류장별 소요(offset(순번) = 기점에서 걸리는 분)로 잰다.
+// 정류장 수 × 평균은 버스가 오는 구간이 탈 구간과 다르면 크게 틀렸다 (182번 급행: 성판악~제주대는 정류장당 4분, 시내는 1.6분)
+export const minsAway = (loc: { stationId: string; ord: number; bus: boolean }[], stationId: string, offset: (ord: number) => number) =>
+  ahead(loc, stationId, (from, to) => Math.max(0, offset(to) - offset(from)));
+
+function ahead(loc: { stationId: string; ord: number; bus: boolean }[], stationId: string, cost: (from: number, to: number) => number): number[] | null {
   const mine = loc.filter((s) => s.stationId === stationId).map((s) => s.ord);
   if (!mine.length) return null;
   // 같은 정류장이 노선에 여러 번 나오면(회차·가상정류소) 버스마다 가장 가까운 것만 센다.
   const away = loc.filter((s) => s.bus).flatMap((b) => {
-    const ahead = mine.filter((m) => m >= b.ord).map((m) => m - b.ord);
-    return ahead.length ? [Math.min(...ahead)] : [];
+    const c = mine.filter((m) => m >= b.ord).map((m) => cost(b.ord, m));
+    return c.length ? [Math.min(...c)] : [];
   });
   return away.sort((a, b) => a - b);
 }
@@ -40,7 +49,7 @@ export function headwayMin(loc: { bus: boolean }[]): number | undefined {
 export type PlanResults = Record<string, number[] | { error: string }>;
 export type Headways = Record<string, number>;
 // 시간표: "노선:정류장" → 지금부터 몇 분 뒤 오는지 / 오늘 운행이 끝났으면 첫차 시각(자정부터 분)
-export type Schedules = { scheduled?: Record<string, number[]>; pending?: Record<string, number[]>; firstBus?: Record<string, number> };
+export type Schedules = { rtMin?: Record<string, number[]>; scheduled?: Record<string, number[]>; pending?: Record<string, number[]>; firstBus?: Record<string, number> };
 
 // 서버에 보낼 "노선:정류장" 쌍. first = 첫 버스(실시간 대상), 아니면 환승 버스(시간표만 씀).
 // ODsay 구간 → "노선:탈 정류장:내릴 정류장". 서버가 우리 노선 데이터에서 그 노선이 두 정류장에 차례로 서는지 확인한다.
@@ -80,8 +89,10 @@ export function applyRealtime(route: Route, results: PlanResults, headways: Head
     // 단순화: 이 구간의 정류장당 평균 소요(탑승 시간 ÷ 정류장 수)를 버스가 오는 길에도 씀, 신호·정차 편차는 무시
     const perStop = ride.stops > 0 && leg.rideMin > 0 ? leg.rideMin / ride.stops : MIN_PER_STOP;
     const found = ride.routeIds.map((id) => results[`${id}:${ride.stationId}`]).filter(Array.isArray);
-    const mins = found.flat().map((n) => n * perStop).sort((a, b) => a - b);
-    for (const id of ride.routeIds) { const v = results[`${id}:${ride.stationId}`]; if (Array.isArray(v)) for (const n of v) src.push([n * perStop, id]); }
+    // 서버가 시간표로 잰 분(rtMin)이 있으면 그것을, 없으면 정류장 수 × 평균 (시간표 없는 노선)
+    const minsOf = (id: string): number[] => { const k = `${id}:${ride.stationId}`, v = results[k]; return Array.isArray(v) ? sched.rtMin?.[k] ?? v.map((n) => n * perStop) : []; };
+    const mins = ride.routeIds.flatMap(minsOf).sort((a, b) => a - b);
+    for (const id of ride.routeIds) for (const m of minsOf(id)) src.push([m, id]);
     if (src.length) Object.assign(next, { src });
     if (!mins.length && found.length && i === 0) noBusNow = true;
     // 실시간 조회가 됐으면 오는 버스가 없어도 빈 배열로 넘긴다: "실시간 없음"과 "실시간상 오는 버스 없음"은 다르다 (lib/eta.ts)
