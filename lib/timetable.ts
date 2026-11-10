@@ -68,16 +68,31 @@ export function tripsFor(tab: Tab, stops: string[], no = '', loose = false): Tri
     const rowNo = noCol >= 0 ? (row[noCol] ?? '').match(/^(\d+)/)?.[1] : undefined;
     if (base && rowNo && rowNo !== base) continue;
     const anchors: Trip = [];
-    let prevOrd = -1, prevMin = -1;
+    let prevMin = -1;
+    const cols: { j: number; os: number[]; min: number }[] = [];
     for (let j = 0; j < row.length; j++) {
       if (!cand[j]) continue;
       let min = parseTime(row[j] ?? '');
       if (min === null) continue;
       if (min < prevMin - 600) min += 1440; // 자정 넘김
       prevMin = min;
-      const ord = cand[j]!.find((o) => o > prevOrd);
-      if (ord !== undefined) anchors.push([ord, min]), (prevOrd = ord);
+      cols.push({ j, os: cand[j]!, min });
     }
+    // 순서가 맞는 열을 가장 많이 잇는다(최장 증가 열). 앞에서부터 욕심내어 고르면 "공항" 열이 노선 맨 끝 "공항(하차전용)"에 붙어
+    // 뒤 열이 전부 버려졌다 (182-5: 공항을 안 지나는 변형에 공항을 지나는 운행이 10분 일찍 붙음)
+    const best: { n: number; prev: [number, number] | null }[][] = cols.map((c) => c.os.map(() => ({ n: 1, prev: null })));
+    let end: [number, number] | null = null;
+    cols.forEach((c, k) => c.os.forEach((o, a) => {
+      for (let k2 = 0; k2 < k; k2++) cols[k2].os.forEach((o2, a2) => { if (o2 < o && best[k2][a2].n + 1 > best[k][a].n) best[k][a] = { n: best[k2][a2].n + 1, prev: [k2, a2] }; });
+      if (!end || best[k][a].n > best[end[0]][end[1]].n) end = [k, a];
+    }));
+    const placed = new Set<number>();
+    for (let cur = end as [number, number] | null; cur; cur = best[cur[0]][cur[1]].prev) {
+      anchors.unshift([cols[cur[0]].os[cur[1]], cols[cur[0]].min]);
+      placed.add(cur[0]);
+    }
+    // 가운데에 시각이 있는데 순서에 못 놓는 열: 이 노선에 그 정류장이 그 자리에 없다 = 다른 변형(그 정류장을 지나는 쪽)의 운행
+    const misfit = cols.some((c, k) => !placed.has(k) && c.os.length > 0 && k > Math.min(...placed) && k < Math.max(...placed));
     if (anchors.length < 2) continue;
     const lo = anchors[0][0], hi = anchors[anchors.length - 1][0];
     if (hi - lo < stops.length / 2) continue;
@@ -180,13 +195,15 @@ export function buildEntry(trips: Trip[], cum?: number[]): Entry | null {
   // 정류장 수로 늘리면 촘촘한 시내 구간·드문 일주 구간이 섞여 크게 틀렸다 (성산 → 김녕 29분, 실제 약 45분)
   const end = cum ? cum.length - 1 : 0;
   if (cum && p[2 * n - 2] < end) p.push(end, Math.round((p[2 * n - 1] + (cum[end] - cum[p[2 * n - 2]]) / fit) * 10) / 10);
+  const base = p[0]; // 느린 앞 기준점을 뺐으면 시각의 기준도 그 다음 기준점(탑승 시각이 표에 있으므로 늘린 값보다 정확)
   if (cum && p[0] > 0) p.unshift(0, Math.round((p[1] - (cum[p[0]] - cum[0]) / fit) * 10) / 10);
   if (cum) p = byDistance(p, cum);
   // 같은 시각 운행은 요일을 합친다
   // 기준 순번보다 뒤에서 시작하는 운행(표의 "노형성당 출발")은 출발 순번을 남긴다. 같은 시각이면 더 앞에서 출발하는 쪽
   const byTime = new Map<number, number>(), from = new Map<number, number>();
   for (const tr of trips) {
-    let k = Math.round(tr[0][1] - offsetAt(p, tr[0][0]));
+    const a0 = tr.find(([o]) => o === base) ?? tr[0];
+    let k = Math.round(a0[1] - offsetAt(p, a0[0]));
     if (k < LATE_MIN) k += 1440; // 새벽 3시 전 출발은 전날 밤 운행(심야 3001번 00:25)으로: 첫차·막차 순서가 맞게
     byTime.set(k, (byTime.get(k) ?? 0) | (tr.m ?? EVERY_DAY));
     from.set(k, Math.min(from.get(k) ?? Infinity, tr[0][0] > ref ? tr[0][0] : 0));
