@@ -1,5 +1,5 @@
 import { revalidateTag } from 'next/cache';
-import { headwayMin, parseBusLocation, stopsAway } from '@/lib/realtime';
+import { headwayMin, parseBusLocation, minsAway, stopsAway } from '@/lib/realtime';
 import { distM, findTrips, indexData, maskOffShape, legPath, roughRide, type Station, type BusRoute, type RideMin, type Shapes, type Trip } from '@/lib/direct';
 import shapeData from '@/data/shapes.json';
 import stationList from '@/data/stations.json';
@@ -105,6 +105,7 @@ export async function GET(req: Request) {
 
   const allPairs = [...pinPairs, ...pairs, ...tripFirst, ...laterPairs, ...tripLater].filter(([r]) => locs.has(r));
   const results: Record<string, number[] | { error: string }> = {};
+  const rtMin: Record<string, number[]> = {}; // 같은 버스들이 정류장까지 걸리는 분 (시간표의 정류장별 소요로 잼, 시간표 있는 노선만)
   for (const [r, s] of allPairs) {
     const loc = locs.get(r)!;
     // 기점(첫 정류장)에 서 있는 버스는 출발 시각을 기다리는 중일 수 있다. 시간표가 있는 노선은 그 버스를 빼고,
@@ -112,6 +113,11 @@ export async function GET(req: Request) {
     const parked = !!tableOf(routeById.get(r));
     const away = loc.ok ? stopsAway(parked ? loc.stops.map((x, k) => (k === 0 ? { ...x, bus: false } : x)) : loc.stops, s) : null;
     results[`${r}:${s}`] = !loc.ok ? { error: loc.reason } : away ?? { error: '이 노선에 없는 정류장' };
+    const e = tableOf(routeById.get(r));
+    if (loc.ok && away && e) {
+      const m = minsAway(parked ? loc.stops.map((x, k) => (k === 0 ? { ...x, bus: false } : x)) : loc.stops, s, (o) => offsetAt(e.p, o) * rf);
+      if (m) rtMin[`${r}:${s}`] = m.map((x) => Math.round(x * 10) / 10);
+    }
   }
   // 따라가는 경로(pin) 구간만: 남은 정류장 수 → 그 버스가 지금 있는 정류장 (화면에 탄 버스 위치)
   const pos: Record<string, Record<number, { name: string; lat: number; lng: number }>> = {};
@@ -194,5 +200,5 @@ export async function GET(req: Request) {
     walkAll = Math.round((ok ? r.m : distM(from, to) * WALK_DETOUR) / WALK_M_PER_MIN);
     walkAllPath = ok ? r.path : [from, to];
   }
-  return Response.json({ results, pos, headways, scheduled, pending, firstBus, trips: out, paths, stopsOk, walkFrom, walkTo, walkAll, walkAllPath });
+  return Response.json({ results, rtMin, pos, headways, scheduled, pending, firstBus, trips: out, paths, stopsOk, walkFrom, walkTo, walkAll, walkAllPath });
 }
