@@ -118,3 +118,8 @@ export function tripsToRoutes(trips: Trip[], existing: Route[]): Route[] {
     };
   });
 }
+
+// 조회에 실패했을 때 ttlMs 안에 받아 둔 위치가 있으면 그것을 쓴다. ageSec = 몇 초 전 위치인지 (실패 그대로면 없음)
+export function fallbackLoc(loc: BusLocation, prev: { t: number; loc: BusLocation } | undefined, now: number, ttlMs: number): { loc: BusLocation; ageSec?: number } {
+  return !loc.ok && prev?.loc.ok && now - prev.t < ttlMs ? { loc: prev.loc, ageSec: Math.round((now - prev.t) / 1000) } : { loc };
+}
