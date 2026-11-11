@@ -64,7 +64,7 @@ scripts/accuracy.mjs  배포된 /api/plan으로 대기 예측 정확도 측정 (
 | 시간표 | bus.jeju.go.kr `/data/schedule/getScheduleInfo`·`getScheduleTableInfo` (robots.txt·약관 없음 확인, 사용자 승인 2026-10-31) | `scripts/fetch-schedules.mjs` → `data/schedules.json`, `scripts/build-timetable.mjs`가 주요 정류장 이름을 BIS 정류장과 맞춰 `data/timetable.json`(노선 ID별)으로. 매달, 요청 사이 0.3초 |
 | 노선 모양(지도 선) | bus.jeju.go.kr `/data/search/getLinkInfoByLineId` (POST, 시간표와 같은 사이트·승인) | `scripts/fetch-shapes.mjs` → `data/shapes.json`, 시간표 워크플로에서 매달. 정류장은 선분 번호로 맞춤(`--reindex`로 다시 계산) |
 | 걷는 길 | OpenStreetMap (Overpass API, User-Agent 필요) | `scripts/fetch-walk.mjs` → `data/walk.json`, `walk.yml` 석 달마다. 서버에서 읽기만 함(외부 호출 없음, 한도 없음). 화면 하단에 OSM 출처 표기 |
-| 실시간 위치 | 제주 버스정보 busopen `BusLocation?route=` (키 없음, 1단계에서 선택) | 노선 단위 조회, 검색 1회당 최대 16개 노선(6초 넘으면 남은 노선은 건너뜀, 상위 6개 후보의 환승 구간까지 먼저). 대기 = 남은 정류장 수 × 구간 정류장당 소요. `BusArrives`(도착 예정)는 값이 2022·2025년에 멈춰 있어 쓰지 않는다. 서버가 가끔 3초를 넘긴다 |
+| 실시간 위치 | 제주 버스정보 busopen `BusLocation?route=` (키 없음, 1단계에서 선택) | 노선 단위 조회, 검색 1회당 최대 16개 노선(남은 시간이 4초보다 짧으면 남은 노선은 건너뜀, 상위 6개 후보의 환승 구간까지 먼저). 대기 = 남은 정류장 수 × 구간 정류장당 소요. `BusArrives`(도착 예정)는 값이 2022·2025년에 멈춰 있어 쓰지 않는다. 서버가 가끔 3초를 넘긴다 |
 
 - API 키는 Vercel 환경 변수에만 둔다. 커밋, 로그, 클라이언트 번들에 넣지 않는다 (도메인을 제한한 브라우저 키 `NEXT_PUBLIC_ODSAY_KEY`, `NEXT_PUBLIC_KAKAO_JS_KEY`만 예외).
 - 공공 API는 오류를 HTTP 200에 담아 보낼 수 있다. 결과 코드를 확인하고, 오류 응답은 캐시하지 않는다.
@@ -97,7 +97,7 @@ scripts/accuracy.mjs  배포된 /api/plan으로 대기 예측 정확도 측정 (
 ## Vercel 설정
 
 - 함수 지역은 서울로 고정한다: `vercel.json`에 `"regions": ["icn1"]`.
-- 실시간 조회는 2개씩 나눠 병렬로 보내고(제주 서버는 5개를 동시에 보내면 모두 3초를 넘김, 실측), 각 요청에 `AbortSignal.timeout`을 둔다(요청당 최대 6초, 전체 8.5초 안. 6초 넘으면 새 배치를 보내지 않는다. Vercel→busopen은 3초를 늘 넘겨 6회 모두 실패, 2026-11-11).
+- 실시간 조회는 2개씩 나눠 병렬로 보내고(제주 서버는 5개를 동시에 보내면 모두 3초를 넘김, 실측), 각 요청에 `AbortSignal.timeout`을 둔다(요청당 최대 6초, 전체 8.5초 안. 남은 시간이 4초보다 짧으면 새 배치를 보내지 않는다 (짧은 제한 시간은 3초대 응답을 TimeoutError로 실패시켰다, 2026-11-11). Vercel→busopen은 3초를 늘 넘겨 6회 모두 실패, 2026-11-11).
 - 실시간 응답(버스 위치)은 `fetch(url, { cache: 'no-store' })`로 캐시하지 않는다. `revalidate`는 만료된 값을 먼저 주므로 옛 위치가 첫 화면에 나온다(2026-11-11). 함수 메모리에는 직전 성공 위치만 두고, 조회가 실패했을 때만 45초 안의 값을 대신 쓴다(`fallbackLoc`, 화면에 "N초 전 값"). 성공하면 늘 새 값.
 - Hobby 요금제는 비상업 용도 전용이다. 광고나 유료화를 하면 Pro로 옮긴다. 애드센스 코드는 들어 있지만 `NEXT_PUBLIC_ADSENSE_CLIENT`가 없으면 꺼져 있다(2026-11-01). 이 값을 넣기 전에 Pro 전환을 먼저 확인한다.
 - API 확인은 로컬이 아니라 배포된 환경에서 한다 (IP·지역 문제는 로컬에서 드러나지 않는다).

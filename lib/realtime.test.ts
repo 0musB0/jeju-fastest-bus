@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseBusLocation, minsAway, stopsAway, fallbackLoc } from './realtime.ts';
+import { parseBusLocation, minsAway, stopsAway, fallbackLoc, batchTimeout } from './realtime.ts';
 
 const item = (id: string, ord: number, plate = 'null') => `<item><plateNo>${plate}</plateNo><stationId>${id}</stationId><stationOrd>${ord}</stationOrd></item>`;
 const xml = `<response><header><resultCode>00</resultCode></header><body><items>${[
@@ -102,4 +102,10 @@ test('fallbackLoc: 실패하면 45초 안의 직전 위치를 쓰고 몇 초 전
   assert.deepEqual(fallbackLoc(fail, { t: 1000, loc: ok }, 60000, 45000), { loc: fail }); // 너무 오래됨
   assert.deepEqual(fallbackLoc(fail, undefined, 5000, 45000), { loc: fail });
   assert.deepEqual(fallbackLoc(ok, { t: 1000, loc: { ok: true, stops: [] } }, 2000, 45000), { loc: ok }); // 성공이면 새 값
+});
+
+test('batchTimeout: 남은 시간이 짧으면 새 배치를 보내지 않고, 충분하면 6초 안에서 남은 시간을 쓴다', () => {
+  assert.equal(batchTimeout(8500), 6000); // 처음 배치
+  assert.equal(batchTimeout(4500), 4500); // 남은 시간 전부를 준다 (3초대 응답이 들어갈 시간)
+  assert.equal(batchTimeout(3999), null); // 이보다 짧으면 TimeoutError로 실패하니 보내지 않는다
 });

@@ -1,4 +1,4 @@
-import { headwayMin, parseBusLocation, minsAway, stopsAway, fallbackLoc } from '@/lib/realtime';
+import { headwayMin, parseBusLocation, minsAway, stopsAway, fallbackLoc, batchTimeout } from '@/lib/realtime';
 import { distM, findTrips, indexData, maskOffShape, legPath, roughRide, type Station, type BusRoute, type RideMin, type Shapes, type Trip } from '@/lib/direct';
 import shapeData from '@/data/shapes.json';
 import stationList from '@/data/stations.json';
@@ -32,8 +32,7 @@ try { walker = walkGraph(JSON.parse(readFileSync(join(process.cwd(), 'data', 'wa
 const ID = /^\d{9}$/;
 // 실시간 조회 노선 수. 10개일 때 첫 구간 가지 노선만으로 다 차서 환승 구간은 늘 시간표였다 (공항→중문 39개 후보, 2026-11-03)
 const MAX_ROUTES = 16;
-const RT_BUDGET_MS = 6000; // 이 시간이 지나면 남은 노선은 조회하지 않는다 (제주 서버가 느릴 때 응답이 늘어지지 않게)
-const RT_END_MS = 8500; // 마지막 요청까지 합친 상한 (Vercel Hobby 10초 제한 안)
+const RT_END_MS = 8500; // 마지막 요청까지 합친 상한 (Vercel Hobby 10초 제한 안). 남은 시간이 4초보다 짧으면 새 배치를 보내지 않는다 (lib/realtime.ts batchTimeout)
 const STALE_MS = 45000; // 조회가 실패하면 이 안에 받아 둔 위치를 쓴다 (화면에 'N초 전 위치')
 const TOP_TRIPS = 6; // 실시간을 먼저 채울 상위 후보 수 (화면에는 3개, 갱신 때 순위가 바뀌는 것 대비)
 const MAX_PAIRS = 60; // 시간표는 로컬 데이터라 더 많이 본다
@@ -108,9 +107,10 @@ export async function GET(req: Request) {
   const locs = new Map<string, Awaited<ReturnType<typeof busLocation>>>();
   const stale: Record<string, number> = {}; // 노선 → 몇 초 전 위치인지 (조회 실패를 직전 값으로 대신한 것)
   const t0 = Date.now();
-  for (let i = 0; i < routeIds.length && Date.now() - t0 < RT_BUDGET_MS; i += CONCURRENCY) {
+  for (let i = 0; i < routeIds.length; i += CONCURRENCY) {
     // 요청 하나는 6초까지 기다리되 전체가 RT_END_MS를 넘지 않게 남은 시간만큼만 (Vercel에서 3초는 늘 부족했다, 2026-11-11)
-    const timeout = Math.min(6000, Math.max(1500, RT_END_MS - (Date.now() - t0)));
+    const timeout = batchTimeout(RT_END_MS - (Date.now() - t0));
+    if (timeout === null) break;
     await Promise.all(routeIds.slice(i, i + CONCURRENCY).map(async (r) => {
       const got = fallbackLoc(await busLocation(r, timeout), lastOk.get(r), Date.now(), STALE_MS);
       if (got.ageSec !== undefined) stale[r] = got.ageSec;
