@@ -107,12 +107,17 @@ export async function GET(req: Request) {
   const locs = new Map<string, Awaited<ReturnType<typeof busLocation>>>();
   const stale: Record<string, number> = {}; // 노선 → 몇 초 전 위치인지 (조회 실패를 직전 값으로 대신한 것)
   const t0 = Date.now();
+  const rtDiag: Record<string, { batch: number; startMs: number; timeoutMs: number; ms: number; ok: boolean; reason?: string }> = {}; // DIAG(임시)
   for (let i = 0; i < routeIds.length; i += CONCURRENCY) {
     // 요청 하나는 6초까지 기다리되 전체가 RT_END_MS를 넘지 않게 남은 시간만큼만 (Vercel에서 3초는 늘 부족했다, 2026-11-11)
     const timeout = batchTimeout(RT_END_MS - (Date.now() - t0));
     if (timeout === null) break;
+    const batch = i / CONCURRENCY, startMs = Date.now() - t0; // DIAG(임시)
     await Promise.all(routeIds.slice(i, i + CONCURRENCY).map(async (r) => {
-      const got = fallbackLoc(await busLocation(r, timeout), lastOk.get(r), Date.now(), STALE_MS);
+      const c0 = Date.now(); // DIAG(임시)
+      const raw = await busLocation(r, timeout);
+      rtDiag[r] = { batch, startMs, timeoutMs: timeout, ms: Date.now() - c0, ok: raw.ok, reason: raw.ok ? undefined : raw.reason }; // DIAG(임시)
+      const got = fallbackLoc(raw, lastOk.get(r), Date.now(), STALE_MS);
       if (got.ageSec !== undefined) stale[r] = got.ageSec;
       locs.set(r, got.loc);
     }));
@@ -215,5 +220,5 @@ export async function GET(req: Request) {
     walkAll = Math.round((ok ? r.m : distM(from, to) * WALK_DETOUR) / WALK_M_PER_MIN);
     walkAllPath = ok ? r.path : [from, to];
   }
-  return Response.json({ results, stale, rtMin, pos, headways, scheduled, pending, firstBus, trips: out, paths, stopsOk, walkFrom, walkTo, walkAll, walkAllPath });
+  return Response.json({ rtDiag, rtRoutes: routeIds, results, stale, rtMin, pos, headways, scheduled, pending, firstBus, trips: out, paths, stopsOk, walkFrom, walkTo, walkAll, walkAllPath });
 }
