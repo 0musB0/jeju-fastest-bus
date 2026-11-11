@@ -62,7 +62,7 @@ async function fetchLocation(r: string, timeoutMs: number) {
     });
     return parseBusLocation(await res.text());
   } catch (e) {
-    // 이유를 남긴다: TimeoutError(3초 넘김)인지 연결 실패인지 (서귀포 520번이 계속 실패, 2026-11-02)
+    // 이유를 남긴다: TimeoutError(제한 시간 넘김)인지 연결 실패인지 (서귀포 520번이 계속 실패, 2026-11-02)
     return { ok: false as const, reason: `실시간 API 응답 없음 (${(e as Error)?.name ?? '?'}${(e as Error & { cause?: { code?: string } })?.cause?.code ? ` ${(e as Error & { cause: { code: string } }).cause.code}` : ''})` };
   }
 }
@@ -109,8 +109,8 @@ export async function GET(req: Request) {
   const stale: Record<string, number> = {}; // 노선 → 몇 초 전 위치인지 (조회 실패를 직전 값으로 대신한 것)
   const t0 = Date.now();
   for (let i = 0; i < routeIds.length && Date.now() - t0 < RT_BUDGET_MS; i += CONCURRENCY) {
-    // 요청 하나는 5초까지 기다리되 전체가 RT_END_MS를 넘지 않게 남은 시간만큼만 (Vercel에서 3초는 늘 부족했다, 2026-11-11)
-    const timeout = Math.min(5000, Math.max(1500, RT_END_MS - (Date.now() - t0)));
+    // 요청 하나는 6초까지 기다리되 전체가 RT_END_MS를 넘지 않게 남은 시간만큼만 (Vercel에서 3초는 늘 부족했다, 2026-11-11)
+    const timeout = Math.min(6000, Math.max(1500, RT_END_MS - (Date.now() - t0)));
     await Promise.all(routeIds.slice(i, i + CONCURRENCY).map(async (r) => {
       const got = fallbackLoc(await busLocation(r, timeout), lastOk.get(r), Date.now(), STALE_MS);
       if (got.ageSec !== undefined) stale[r] = got.ageSec;
