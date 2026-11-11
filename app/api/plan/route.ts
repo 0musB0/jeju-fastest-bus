@@ -1,4 +1,3 @@
-import { revalidateTag } from 'next/cache';
 import { headwayMin, parseBusLocation, minsAway, stopsAway } from '@/lib/realtime';
 import { distM, findTrips, indexData, maskOffShape, legPath, roughRide, type Station, type BusRoute, type RideMin, type Shapes, type Trip } from '@/lib/direct';
 import shapeData from '@/data/shapes.json';
@@ -48,11 +47,11 @@ async function busLocation(r: string) {
   try {
     const res = await fetch(`http://busopen.jeju.go.kr/OpenAPI/service/bis/BusLocation?route=${r}`, {
       signal: AbortSignal.timeout(3000),
-      next: { revalidate: 20, tags: [`loc-${r}`] }, // 인스턴스 간 공유 캐시
+      // 캐시하지 않는다. revalidate는 오래된 값을 한 번 먼저 주고 뒤에서 갱신해서, 한동안 아무도 안 썼다가 열면 첫 화면이 옛 버스 위치였다
+      // (카카오맵 30분인데 앱은 8분, 2026-11-11). 갱신 주기가 20초라 호출 수가 늘지 않는다.
+      cache: 'no-store',
     });
-    const parsed = parseBusLocation(await res.text());
-    if (!parsed.ok) revalidateTag(`loc-${r}`, { expire: 0 }); // 오류 응답은 캐시에 남기지 않는다
-    return parsed;
+    return parseBusLocation(await res.text());
   } catch (e) {
     // 이유를 남긴다: TimeoutError(3초 넘김)인지 연결 실패인지 (서귀포 520번이 계속 실패, 2026-11-02)
     return { ok: false as const, reason: `실시간 API 응답 없음 (${(e as Error)?.name ?? '?'}${(e as Error & { cause?: { code?: string } })?.cause?.code ? ` ${(e as Error & { cause: { code: string } }).cause.code}` : ''})` };
