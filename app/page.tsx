@@ -204,8 +204,8 @@ export default function Home() {
   const [walkMin, setWalkMin] = useState<number | null>(null); // 버스 없이 걸어가는 시간(3km 안)
   const [walkPath, setWalkPath] = useState<Pt[] | undefined>(undefined);
   const [pos, setPos] = useState<Record<string, Record<number, Pt & { name: string }>>>({}); // 따라가는 구간 버스 위치 (남은 정류장 수 → 정류장)
-  const [me, setMe] = useState<Pt | undefined>(undefined); // 내 위치 (GPS, 지도와 '탔는지' 판단에 씀)
-  const meRef = useRef<Pt | undefined>(undefined);
+  const [me, setMe] = useState<(Pt & { acc?: number }) | undefined>(undefined); // 내 위치 (GPS, 지도와 '탔는지' 판단에 씀, acc = 정확도 m)
+  const meRef = useRef<(Pt & { acc?: number }) | undefined>(undefined);
   meRef.current = me;
   const [heading, setHeading] = useState<number | undefined>(undefined); // 내가 바라보는 방향 (북쪽 0°, 시계 방향)
   const busAt = (r: Ranked) => (r.bus ? pos[r.bus.key]?.[r.bus.left] : undefined); // 탄 버스가 지금 있는 정류장
@@ -219,6 +219,7 @@ export default function Home() {
   heldRef.current = held; atRef.current = at;
 
   const odsayOrg = useRef<Pt | null>(null); // ODsay 경로를 받은 출발 위치: 탑승 뒤 내가 500m 넘게 움직이면 다시 받는다
+  const lastOrigin = useRef<Pt | null>(null); // 마지막으로 계산에 쓴 출발 좌표 ("현재 위치" 갱신 때 30m 안 움직임 판단의 기준)
   const busSeen = useRef<{ base: { key: string; left: number; t: number }; last: { key: string; left: number; t: number } } | null>(null); // 탄 버스의 남은 정류장 수 기록 (속도 보정용)
   const odsayErr = useRef('');
   const odsayRef = useRef<Route[] | null>(null); // 출발·도착이 같으면 ODsay 경로는 다시 부르지 않는다 (일일 한도)
@@ -256,7 +257,9 @@ export default function Home() {
     if (!P) return; // "바꾸기": 옛 결과를 지우고 끝 (따라가는 경로가 없을 때)
     const { to: T } = P;
     // 탄 뒤(고정 상태)에는 새 경로를 지금 내 위치에서 찾는다. GPS가 없으면 처음 출발지 그대로 (기존 동작)
-    const F = searchOrigin(!!frozenRef.current && !!pinRef.current, meRef.current, P.from);
+    // 출발이 "현재 위치"면 갱신 때마다 GPS로 다시 잡는다 (MUS2-29). 기준은 마지막으로 쓴 좌표
+    const F = searchOrigin(!!frozenRef.current && !!pinRef.current, P.from.name === '현재 위치', meRef.current, refresh && lastOrigin.current ? lastOrigin.current : P.from, P.from);
+    lastOrigin.current = { lat: F.lat, lng: F.lng };
     if (odsayOrg.current && distM(odsayOrg.current, F) > 500) odsayRef.current = null;
     try {
       // ODsay는 Web 키로 브라우저에서 직접 호출한다 (서버 호출 금지). SearchPathType=2: 버스만.
@@ -469,7 +472,7 @@ export default function Home() {
   useEffect(() => {
     if (!hasMap || !navigator.geolocation) return;
     const set = (p: GeolocationPosition) => {
-      setMe({ lat: p.coords.latitude, lng: p.coords.longitude });
+      setMe({ lat: p.coords.latitude, lng: p.coords.longitude, acc: p.coords.accuracy });
       if (p.coords.heading != null && !isNaN(p.coords.heading) && (p.coords.speed ?? 0) > 1) setHeading(p.coords.heading); // 움직일 때 GPS 진행 방향
     };
     const opt = { enableHighAccuracy: true, maximumAge: 10_000, timeout: 20_000 };

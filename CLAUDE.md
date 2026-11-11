@@ -39,7 +39,7 @@ app/api/plan          서버 핵심. data/*.json을 import해 findTrips(우리 �
 lib/config.ts         조절값 상수 전부
 lib/direct.ts         정류장·노선 인덱스, 거리·걷기, findTrips(직행·환승 2번), legPath
 lib/eta.ts            arrivalMin: 후보 1개의 도착 시각(순수 함수), kstClock 표시
-lib/follow.ts         따라가기 순수 함수: walking(누른 뒤 걸은 만큼), passed(버스 지나감 판정), riding(탄 버스 안·환승 정류장에서 남은 경로 다시 계산), shift, searchOrigin(탑승 뒤 검색 출발지), pace(버스 속도 배율)
+lib/follow.ts         따라가기 순수 함수: walking(누른 뒤 걸은 만큼), passed(버스 지나감 판정), riding(탄 버스 안·환승 정류장에서 남은 경로 다시 계산), shift, searchOrigin(검색 출발지: 탑승 뒤 내 위치, "현재 위치" 출발은 갱신 때마다 GPS 다시 읽기), pace(버스 속도 배율)
 lib/realtime.ts       BusLocation XML 파싱, 남은 정류장 수, applyRealtime(대기 반영), tripsToRoutes(우리 경로 → 화면용 Route)
 lib/odsay.ts          ODsay 응답 파싱(JEB 접두어 제거), 요금 계산
 lib/timetable.ts      시간표 표 파싱·이름 맞추기·Entry 생성, arrivals/firstAt, kstDay(공휴일 목록)·kstMinutes
