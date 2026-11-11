@@ -37,7 +37,7 @@ export function passed(prevBoard: number, nextBoard: number, now: number): boole
 // 화면은 끝까지 7:14 도착이라고 했다 (실제 7:36, 2026-11-02 사용자 실측).
 // 내릴 정류장까지 남은 정류장 수 중 탈 정류장을 지난 버스(구간 정류장 수보다 적게 남음), 그중 시간표상 지금 있을 곳에 가장 가까운 버스를 내 버스로 본다.
 // 단순화: 남은 구간은 계획한 탑승 시간을 정류장 수로 나눠 씀, 뒤차가 내 버스보다 시간표 위치에 더 가까우면 잘못 고름
-export function onBus(ride: Route['rides'][number] | undefined, id: string | undefined, rideMin: number, planned: number, results: PlanResults): { min: number; key: string; left: number } | null {
+export function onBus(ride: Route['rides'][number] | undefined, id: string | undefined, rideMin: number, planned: number, results: PlanResults, pace = 1): { min: number; key: string; left: number } | null {
   const rid = id ?? ride?.routeIds.find(Boolean), key = ride?.endStationId && `${rid}:${ride.endStationId}`;
   // 가지 노선마다 정류장 수가 다르다 (급행 111은 8개, 같은 구간 212는 56개)
   const span = (rid && ride?.stopsBy?.[ride.routeIds.indexOf(rid)]) || ride?.stops || 0;
@@ -46,13 +46,13 @@ export function onBus(ride: Route['rides'][number] | undefined, id: string | und
   const expect = (span * Math.min(Math.max(planned, 0), rideMin)) / rideMin;
   // 시간표 위치보다 구간 절반 넘게 뒤처진 버스는 뒤차로 본다 (내 버스는 이미 내릴 정류장을 지남)
   const mine = away.filter((a) => a < span && a <= expect + span / 2).sort((a, b) => Math.abs(a - expect) - Math.abs(b - expect))[0];
-  return mine === undefined || !key ? null : { min: (rideMin * mine) / span, key, left: mine };
+  return mine === undefined || !key ? null : { min: ((rideMin * mine) / span) * pace, key, left: mine };
 }
 
 // 탄 버스 안: 탄 구간은 끝난 것으로, 지금 탄 버스는 남은 탑승 시간만, 그 뒤 환승 버스는 새 실시간·시간표로 다시 계산한다.
 // 다시 계산할 수 없으면(환승 버스 정보 없음) 고정한 시각을 그대로 쓴다.
 // 탄 버스의 남은 시간은 onBus(실제 위치), 없으면 시간표 탑승 시간대로
-export function riding(f: Frozen, nowMs: number, results: PlanResults, headways: Headways, sched: Schedules): Followed {
+export function riding(f: Frozen, nowMs: number, results: PlanResults, headways: Headways, sched: Schedules, pace = 1): Followed {
   const { k } = f, now = nowMs / 60000, base = f.t / 60000;
   const fixed = { ...shift(f.r, now - base), rode: k };
   if (!f.r.eta) return fixed;
@@ -66,7 +66,7 @@ export function riding(f: Frozen, nowMs: number, results: PlanResults, headways:
   };
   const done = L.slice(0, k - 1).map((_, j) => ({ walkBeforeMin: 0, rideMin: 0, nextBusesMin: [0], ...src(j) }));
   const planned = base + B[k - 1].at + L[k - 1].rideMin - now; // 시간표대로 가면 내릴 때까지 남은 분 (음수 = 이미 내림)
-  const live = onBus(f.r.rides[k - 1], L[k - 1].src?.find(([m]) => Math.abs(m - B[k - 1].at) < 1e-6)?.[1], L[k - 1].rideMin, planned, results);
+  const live = onBus(f.r.rides[k - 1], L[k - 1].src?.find(([m]) => Math.abs(m - B[k - 1].at) < 1e-6)?.[1], L[k - 1].rideMin, planned, results, pace);
   const off = live?.min ?? planned, bus = live ? { bus: { key: live.key, left: live.left } } : {};
   const tail = re.candidate.legs.slice(k), zero: Board = { at: 0, atStop: 0, how: 'realtime' };
   if (off <= 0) {
@@ -84,4 +84,18 @@ export function riding(f: Frozen, nowMs: number, results: PlanResults, headways:
   const eta = arrivalMin({ legs: [on, ...tail], walkAfterMin: re.candidate.walkAfterMin });
   if (!eta) return fixed;
   return { ...re, rode: k, ...bus, candidate: { ...re.candidate, legs: [...done, on, ...tail] }, eta: { ...eta, boards: [...done.map(() => zero), ...eta.boards] } };
+}
+
+// 탑승 뒤 20초 갱신의 검색 출발지: 탄 것으로 판정됐고 내 GPS가 있으면 지금 위치, 아니면 처음 출발지 그대로.
+export function searchOrigin<P extends { lat: number; lng: number }>(boarded: boolean, me: { lat: number; lng: number } | undefined, orig: P): P {
+  return boarded && me ? { ...orig, lat: me.lat, lng: me.lng } : orig;
+}
+
+// 버스의 실제 속도 배율 (1 = 시간표대로, >1 = 느림). prev→now 사이 내릴 곳까지 남은 정류장이 줄어든 만큼이 실제 진행,
+// 같은 시간에 시간표가 가야 할 정류장 수(perStopMin분당 1개)와 비교한다. 튀지 않게 [0.8, 1.5]로 자르고,
+// 3분 미만 간격·정류장이 안 줄었거나 다른 버스(키 다름)면 보정하지 않는다.
+export function pace(prev: { key: string; left: number; t: number } | undefined, now: { key: string; left: number; t: number }, perStopMin: number): number {
+  const el = prev && prev.key === now.key ? (now.t - prev.t) / 60000 : 0, moved = prev ? prev.left - now.left : 0;
+  if (el < 3 || moved < 1 || perStopMin <= 0) return 1;
+  return Math.min(1.5, Math.max(0.8, el / moved / perStopMin));
 }

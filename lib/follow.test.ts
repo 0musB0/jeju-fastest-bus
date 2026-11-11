@@ -98,3 +98,27 @@ test('내 버스가 이미 지나갔고 뒤차만 있으면 시간표대로 (뒤
   const out = riding({ r, t: T0, k: 2 }, T0 + 41 * min, { '405321202:407000001': [4] }, {}, {});
   assert.equal(out.eta!.min, 2);
 });
+
+import { onBus, pace, searchOrigin } from './follow.ts';
+const A = { lat: 33.45, lng: 126.56 }, G = { lat: 33.5, lng: 126.6 };
+test('searchOrigin: 탑승 전·위치 없음은 그대로, 탑승 후엔 내 위치', () => {
+  assert.deepEqual(searchOrigin(false, G, A), A); // (a)
+  assert.deepEqual(searchOrigin(true, G, { ...A, name: '제주대' }), { ...G, name: '제주대' }); // (b)
+  assert.deepEqual(searchOrigin(true, undefined, A), A); // (d)
+});
+test('pace: 시간표보다 느리면 >1, 빠르면 <1, 상·하한, 정보 부족은 1', () => {
+  const p = { key: 'a:b', left: 20, t: 0 };
+  assert.equal(pace(p, { key: "a:b", left: 15, t: 10 * min }, 1), 1.5); // 5정류장에 10분 = 2배 → 상한 1.5
+  assert.equal(pace(p, { key: 'a:b', left: 15, t: 6 * min }, 1), 1.2); // (c)
+  assert.equal(pace(p, { key: 'a:b', left: 10, t: 5 * min }, 1), 0.8); // 하한
+  assert.equal(pace(p, { key: 'x', left: 15, t: 10 * min }, 1), 1);
+  assert.equal(pace(undefined, p, 1), 1);
+  assert.equal(pace(p, { key: 'a:b', left: 20, t: 10 * min }, 1), 1);
+});
+test('onBus: 느린 버스(pace>1)는 남은 분이 늘어남', () => {
+  const r = { busNos: ['1'], routeIds: ['R'], stationId: 's', endStationId: 'e', from: 's', to: 'e', stops: 10 } as never;
+  const res = { 'R:e': [4] } as never;
+  const base = onBus(r, 'R', 20, 10, res)!, slow = onBus(r, 'R', 20, 10, res, 1.25)!;
+  assert.equal(base.min, 8);
+  assert.equal(slow.min, 10);
+});

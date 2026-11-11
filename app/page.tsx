@@ -2,7 +2,7 @@
 import { Fragment, useEffect, useRef, useState } from 'react';
 import { arrivalMin, kstClock12 as kstClock } from '@/lib/eta';
 import { kstMinutes } from '@/lib/timetable';
-import { passed, riding, shift, walking, type Followed, type Frozen } from '@/lib/follow';
+import { pace, passed, riding, searchOrigin, shift, walking, type Followed, type Frozen } from '@/lib/follow';
 import { parseOdsay, type Pt, type Route } from '@/lib/odsay';
 import { applyRealtime, tripsToRoutes, sameRide, rideKeys, stopKeys, onOurRoutes, withOurWalks, type Headways, type PlanResults, type Schedules } from '@/lib/realtime';
 import { distM, type Trip } from '@/lib/direct';
@@ -217,6 +217,8 @@ export default function Home() {
   pinRef.current = pin;
   heldRef.current = held; atRef.current = at;
 
+  const odsayOrg = useRef<Pt | null>(null); // ODsay 경로를 받은 출발 위치: 탑승 뒤 내가 500m 넘게 움직이면 다시 받는다
+  const busSeen = useRef<{ base: { key: string; left: number; t: number }; last: { key: string; left: number; t: number } } | null>(null); // 탄 버스의 남은 정류장 수 기록 (속도 보정용)
   const odsayErr = useRef('');
   const odsayRef = useRef<Route[] | null>(null); // 출발·도착이 같으면 ODsay 경로는 다시 부르지 않는다 (일일 한도)
   const reqId = useRef(0); // 새 검색마다 1씩 늘린다. 늦게 온 이전 검색·갱신 응답은 버린다.
@@ -251,7 +253,10 @@ export default function Home() {
       setMsg(P ? '경로 계산 중...' : '');
     }
     if (!P) return; // "바꾸기": 옛 결과를 지우고 끝 (따라가는 경로가 없을 때)
-    const { from: F, to: T } = P;
+    const { to: T } = P;
+    // 탄 뒤(고정 상태)에는 새 경로를 지금 내 위치에서 찾는다. GPS가 없으면 처음 출발지 그대로 (기존 동작)
+    const F = searchOrigin(!!frozenRef.current && !!pinRef.current, meRef.current, P.from);
+    if (odsayOrg.current && distM(odsayOrg.current, F) > 500) odsayRef.current = null;
     try {
       // ODsay는 Web 키로 브라우저에서 직접 호출한다 (서버 호출 금지). SearchPathType=2: 버스만.
       // ODsay는 보조: 오류·한도 초과·무응답(5초)이어도 우리 데이터로 찾은 직행·환승 경로를 보여준다
@@ -272,6 +277,7 @@ export default function Home() {
           : '';
         odsay = parsed.ok ? [...parsed.routes].sort((a, b) => a.odsayMin - b.odsayMin) : [];
         odsayRef.current = odsay;
+        odsayOrg.current = { lat: F.lat, lng: F.lng };
       }
       let results: PlanResults = {};
       let headways: Headways = {};
@@ -379,7 +385,7 @@ export default function Home() {
         const old = cur.find((r) => routeKey(r) === fk), found = ranked.find((r) => routeKey(r) === fk);
         const fresh = found && walking(found, (nowMs - (sinceRef.current || atMs)) / 60000);
         const board = (r: Ranked | undefined, ms: number, j: number) => (r?.eta?.boards[j] ? ms / 60000 + r.eta.boards[j].at : NaN);
-        const unpin = () => { pinRef.current = ''; selRef.current = ''; frozenRef.current = null; setPin(''); setSelKey(''); setHeld(false); setRoutes(next); setAt(new Date()); };
+        const unpin = () => { busSeen.current = null; pinRef.current = ''; selRef.current = ''; frozenRef.current = null; setPin(''); setSelKey(''); setHeld(false); setRoutes(next); setAt(new Date()); };
         // 도착하고 30분이 지나면 따라가기를 끝낸다
         if (old?.eta && nowMs > atMs + (old.eta.min + 30) * 60000) return unpin();
         let f = frozenRef.current, top: Ranked | undefined;
@@ -390,7 +396,14 @@ export default function Home() {
           else if (old) f = frozenRef.current = { r: old, t: atMs, k: 1 };
         }
         if (f) {
-          top = riding(f, nowMs, results, headways, sched);
+          // 탄 버스의 실제 속도: 처음 본 때 대비 줄어든 정류장 수로 시간표 속도와 비교 (lib/follow.ts pace)
+          const ride = f.r.rides[f.k - 1], perStop = f.r.candidate.legs[f.k - 1].rideMin / (ride?.stops || 1);
+          const seen = busSeen.current;
+          top = riding(f, nowMs, results, headways, sched, seen ? pace(seen.base, seen.last, perStop) : 1);
+          if (top.bus) {
+            const n = { ...top.bus, t: nowMs };
+            busSeen.current = !seen || seen.last.key !== n.key || n.left > seen.last.left ? { base: n, last: n } : { base: n.t - seen.base.t > 10 * 60000 ? seen.last : seen.base, last: n };
+          }
           // 갈아탈 버스도 곧 올 차였는데 지나갔으면 그 버스도 탄 것으로 본다 (환승 뒤 다음 차로 바뀌지 않게)
           if (f.k < f.r.rides.length && passed(board(old, atMs, f.k), board(top, nowMs, f.k), nowMin)) {
             f = frozenRef.current = { r: old!, t: atMs, k: f.k + 1 };
@@ -505,7 +518,7 @@ export default function Home() {
           <span className="muted">{held ? '고른 경로 유지 중' : '20초마다 갱신'}</span>
         </div>
       )}
-      {at && held && !pin && <p className="muted">타려던 버스가 정류장을 지나서 탄 것으로 봐요. 탄 버스 위치와 갈아탈 버스를 20초마다 실시간으로 다시 계산해요. 새로 찾으려면 출발지를 다시 고르세요.</p>}
+      {at && held && !pin && <p className="muted">타려던 버스가 정류장을 지나서 탄 것으로 봐요. 탄 버스 위치와 갈아탈 버스를 20초마다 실시간으로 다시 계산해요. 아래 다른 경로는 지금 내 위치에서 찾아요. 처음 출발지로 새로 찾으려면 출발지를 다시 고르세요.</p>}
       {at && pin && <p className="muted">{held ? '타려던 버스가 정류장을 지나서 탄 것으로 봐요. 탄 버스 위치와 갈아탈 버스를 계속 실시간으로 다시 계산해요.' : '맨 위 경로를 따라가요. 타려던 버스가 지나가면 그때 계산으로 고정해요.'} 아래는 20초마다 새로 찾은 경로예요.</p>}
       {at && routes.length > 0 && rtDown && <p className="warn">실시간 버스 위치를 받지 못해 일부는 시간표로 계산했어요.</p>}
       {walkFirst && (
