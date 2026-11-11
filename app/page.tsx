@@ -196,7 +196,8 @@ export default function Home() {
   const [routes, setRoutes] = useState<Ranked[]>([]);
   const [at, setAt] = useState<Date | null>(null);
   const [msg, setMsg] = useState('');
-  const [rtDown, setRtDown] = useState(false); // 실시간 서버가 응답하지 않아 시간표로만 계산했는지
+  const [rtWhy, setRtWhy] = useState(''); // 실시간을 못 받은 이유 문구 (빈 문자열이면 정상)
+  const rtDown = !!rtWhy; // 실시간 서버가 응답하지 않아 시간표로만 계산했는지
   const [opened, setOpened] = useState<string[]>([]); // 버스 번호를 다 펼친 경로
   const [selKey, setSelKey] = useState(''); // 고른 경로: 20초 갱신으로 순서가 바뀌어도 같은 경로를 따라간다
   const [held, setHeld] = useState(false); // 고른 경로가 갱신 결과에서 빠져 화면을 고정한 상태
@@ -279,7 +280,7 @@ export default function Home() {
         odsayRef.current = odsay;
         odsayOrg.current = { lat: F.lat, lng: F.lng };
       }
-      let results: PlanResults = {};
+      let results: PlanResults = {}, staleSec: Record<string, number> = {};
       let headways: Headways = {};
       let sched: Schedules = {};
       let trips: Trip[] = [];
@@ -292,6 +293,7 @@ export default function Home() {
           paths: refresh ? '' : [...new Set(odsay.slice(0, 6).flatMap((o) => o.rides.map(pathKey)))].join(','), ...(refresh ? { lite: '1' } : {}) });
         const r = await fetch(`/api/plan?${q}`).then((r) => r.json());
         results = r.results ?? {};
+        staleSec = r.stale ?? {};
         headways = r.headways ?? {};
         setPos(r.pos ?? {});
         sched = { rtMin: r.rtMin, scheduled: r.scheduled, pending: r.pending, firstBus: r.firstBus };
@@ -322,7 +324,7 @@ export default function Home() {
       } catch {
         if (refresh) return; // 갱신 중 한 번 끊기면 이전 결과를 그대로 둔다
         setWalkMin(null);
-        setRtDown(true);
+        setRtWhy('실시간 서버에 연결하지 못해 시간표로 계산했어요.');
         /* 첫 검색: ODsay 경로만, 대기는 추정 불가로 표시 */
       }
       if (stale()) return;
@@ -366,7 +368,11 @@ export default function Home() {
         const v = x.routeIds.map((id) => results[`${id}:${x.stationId}`]).filter((y) => y !== undefined);
         return !v.some(Array.isArray) && v.some((y) => !Array.isArray(y) && y.error !== '이 노선에 없는 정류장');
       };
-      if (Object.keys(results).length) setRtDown(next.some((r) => r.rides[0] && noLive(r.rides[0])));
+      // 이유를 말해 준다: 어느 번호가 어떤 이유로 못 받았는지, 직전 위치로 대신했다면 몇 초 전인지
+      const bad = next.map((r) => r.rides[0]).find((x) => x && noLive(x));
+      const old = next.map((r) => r.rides[0]).find((x) => x?.routeIds.some((id) => staleSec[id]));
+      const why = (x: Route['rides'][number]) => (x.routeIds.map((id) => results[`${id}:${x.stationId}`]).find((y) => y && !Array.isArray(y)) as { error: string } | undefined)?.error ?? '';
+      if (Object.keys(results).length) setRtWhy(bad ? `${bad.busNos[0]}번 버스 위치를 받지 못해 시간표로 계산했어요 (${why(bad).replace('실시간 API 응답 없음', '응답 지연')}).` : old ? `${old.busNos[0]}번 버스 위치는 ${Math.min(...old.routeIds.flatMap((id) => staleSec[id] ?? []))}초 전 값이에요.` : '');
       // 따라갈 경로: "이 경로로 갈게요"를 누른 경로, 아니면 카드를 눌러 고른 경로, 아니면 목록에서 빠진 1위.
       // 고른 경로가 빠지는 건 보통 그 버스를 이미 타서 정류장을 지났기 때문이다. 예전에는 그때 화면을 마지막 계산 그대로 멈췄는데,
       // 탄 뒤에도 버스 위치·갈아탈 버스를 계속 실시간으로 다시 계산한다 (사용자 요청 2026-11-03)
@@ -520,7 +526,7 @@ export default function Home() {
       )}
       {at && held && !pin && <p className="muted">타려던 버스가 정류장을 지나서 탄 것으로 봐요. 탄 버스 위치와 갈아탈 버스를 20초마다 실시간으로 다시 계산해요. 아래 다른 경로는 지금 내 위치에서 찾아요. 처음 출발지로 새로 찾으려면 출발지를 다시 고르세요.</p>}
       {at && pin && <p className="muted">{held ? '타려던 버스가 정류장을 지나서 탄 것으로 봐요. 탄 버스 위치와 갈아탈 버스를 계속 실시간으로 다시 계산해요.' : '맨 위 경로를 따라가요. 타려던 버스가 지나가면 그때 계산으로 고정해요.'} 아래는 20초마다 새로 찾은 경로예요.</p>}
-      {at && routes.length > 0 && rtDown && <p className="warn">실시간 버스 위치를 받지 못해 일부는 시간표로 계산했어요.</p>}
+      {at && routes.length > 0 && rtDown && <p className="warn">{rtWhy}</p>}
       {walkFirst && (
         <article className={`box result best${walkSel ? ' sel' : ''}`} role="button" tabIndex={0} aria-pressed={walkSel} onClick={() => setSelKey('walk')}
           onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelKey('walk'); } }}>

@@ -1,4 +1,4 @@
-import { headwayMin, parseBusLocation, minsAway, stopsAway } from '@/lib/realtime';
+import { headwayMin, parseBusLocation, minsAway, stopsAway, fallbackLoc } from '@/lib/realtime';
 import { distM, findTrips, indexData, maskOffShape, legPath, roughRide, type Station, type BusRoute, type RideMin, type Shapes, type Trip } from '@/lib/direct';
 import shapeData from '@/data/shapes.json';
 import stationList from '@/data/stations.json';
@@ -33,6 +33,8 @@ const ID = /^\d{9}$/;
 // 실시간 조회 노선 수. 10개일 때 첫 구간 가지 노선만으로 다 차서 환승 구간은 늘 시간표였다 (공항→중문 39개 후보, 2026-11-03)
 const MAX_ROUTES = 16;
 const RT_BUDGET_MS = 6000; // 이 시간이 지나면 남은 노선은 조회하지 않는다 (제주 서버가 느릴 때 응답이 늘어지지 않게)
+const RT_END_MS = 8500; // 마지막 요청까지 합친 상한 (Vercel Hobby 10초 제한 안)
+const STALE_MS = 45000; // 조회가 실패하면 이 안에 받아 둔 위치를 쓴다 (화면에 'N초 전 위치')
 const TOP_TRIPS = 6; // 실시간을 먼저 채울 상위 후보 수 (화면에는 3개, 갱신 때 순위가 바뀌는 것 대비)
 const MAX_PAIRS = 60; // 시간표는 로컬 데이터라 더 많이 본다
 const CONCURRENCY = 2;
@@ -43,10 +45,17 @@ const point = (v: string | null) => {
   return lat > 33.1 && lat < 33.6 && lng > 126.08 && lng < 127 ? { lat, lng } : null;
 };
 
-async function busLocation(r: string) {
+// 직전에 성공한 위치 (함수 인스턴스 메모리). 실패했을 때만 STALE_MS 안의 값을 대신 쓴다. 성공하면 늘 새 값이라 옛 위치가 먼저 나오지 않는다.
+const lastOk = new Map<string, { t: number; loc: Awaited<ReturnType<typeof fetchLocation>> }>();
+async function busLocation(r: string, timeoutMs: number) {
+  const loc = await fetchLocation(r, timeoutMs);
+  if (loc.ok) lastOk.set(r, { t: Date.now(), loc });
+  return loc;
+}
+async function fetchLocation(r: string, timeoutMs: number) {
   try {
     const res = await fetch(`http://busopen.jeju.go.kr/OpenAPI/service/bis/BusLocation?route=${r}`, {
-      signal: AbortSignal.timeout(3000),
+      signal: AbortSignal.timeout(timeoutMs),
       // 캐시하지 않는다. revalidate는 오래된 값을 한 번 먼저 주고 뒤에서 갱신해서, 한동안 아무도 안 썼다가 열면 첫 화면이 옛 버스 위치였다
       // (카카오맵 30분인데 앱은 8분, 2026-11-11). 갱신 주기가 20초라 호출 수가 늘지 않는다.
       cache: 'no-store',
@@ -97,9 +106,16 @@ export async function GET(req: Request) {
   }
   // 제주 서버는 동시에 여러 개를 보내면 전부 3초를 넘긴다(실측). 2개씩 나눠 보낸다.
   const locs = new Map<string, Awaited<ReturnType<typeof busLocation>>>();
+  const stale: Record<string, number> = {}; // 노선 → 몇 초 전 위치인지 (조회 실패를 직전 값으로 대신한 것)
   const t0 = Date.now();
   for (let i = 0; i < routeIds.length && Date.now() - t0 < RT_BUDGET_MS; i += CONCURRENCY) {
-    await Promise.all(routeIds.slice(i, i + CONCURRENCY).map(async (r) => locs.set(r, await busLocation(r))));
+    // 요청 하나는 5초까지 기다리되 전체가 RT_END_MS를 넘지 않게 남은 시간만큼만 (Vercel에서 3초는 늘 부족했다, 2026-11-11)
+    const timeout = Math.min(5000, Math.max(1500, RT_END_MS - (Date.now() - t0)));
+    await Promise.all(routeIds.slice(i, i + CONCURRENCY).map(async (r) => {
+      const got = fallbackLoc(await busLocation(r, timeout), lastOk.get(r), Date.now(), STALE_MS);
+      if (got.ageSec !== undefined) stale[r] = got.ageSec;
+      locs.set(r, got.loc);
+    }));
   }
 
   const allPairs = [...pinPairs, ...pairs, ...tripFirst, ...laterPairs, ...tripLater].filter(([r]) => locs.has(r));
@@ -199,5 +215,5 @@ export async function GET(req: Request) {
     walkAll = Math.round((ok ? r.m : distM(from, to) * WALK_DETOUR) / WALK_M_PER_MIN);
     walkAllPath = ok ? r.path : [from, to];
   }
-  return Response.json({ results, rtMin, pos, headways, scheduled, pending, firstBus, trips: out, paths, stopsOk, walkFrom, walkTo, walkAll, walkAllPath });
+  return Response.json({ results, stale, rtMin, pos, headways, scheduled, pending, firstBus, trips: out, paths, stopsOk, walkFrom, walkTo, walkAll, walkAllPath });
 }

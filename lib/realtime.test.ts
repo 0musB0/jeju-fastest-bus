@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseBusLocation, minsAway, stopsAway } from './realtime.ts';
+import { parseBusLocation, minsAway, stopsAway, fallbackLoc } from './realtime.ts';
 
 const item = (id: string, ord: number, plate = 'null') => `<item><plateNo>${plate}</plateNo><stationId>${id}</stationId><stationOrd>${ord}</stationOrd></item>`;
 const xml = `<response><header><resultCode>00</resultCode></header><body><items>${[
@@ -94,4 +94,12 @@ test('버스가 오는 구간이 느리면 정류장 수 × 평균이 아니라 
   const got = applyRealtime(rt, { '405136501:405000153': [2] }, {}, { rtMin: { '405136501:405000153': [11] } });
   assert.deepEqual(got.candidate.legs[0].nextBusesMin, [11]);
   assert.deepEqual(applyRealtime(rt, { '405136501:405000153': [2] }).candidate.legs[0].nextBusesMin, [6]);
+});
+
+test('fallbackLoc: 실패하면 45초 안의 직전 위치를 쓰고 몇 초 전인지 알려준다', () => {
+  const ok = { ok: true as const, stops: [] }, fail = { ok: false as const, reason: '시간 초과' };
+  assert.deepEqual(fallbackLoc(fail, { t: 1000, loc: ok }, 21000, 45000), { loc: ok, ageSec: 20 });
+  assert.deepEqual(fallbackLoc(fail, { t: 1000, loc: ok }, 60000, 45000), { loc: fail }); // 너무 오래됨
+  assert.deepEqual(fallbackLoc(fail, undefined, 5000, 45000), { loc: fail });
+  assert.deepEqual(fallbackLoc(ok, { t: 1000, loc: { ok: true, stops: [] } }, 2000, 45000), { loc: ok }); // 성공이면 새 값
 });
