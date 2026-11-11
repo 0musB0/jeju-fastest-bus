@@ -1,6 +1,7 @@
-import { BOARD_MARGIN_MIN } from './config.ts';
+import { BOARD_MARGIN_MIN, HERE_ACC_M, HERE_STILL_M } from './config.ts';
+import { distM } from './direct.ts';
 import { arrivalMin, type Board } from './eta.ts';
-import type { Route } from './odsay.ts';
+import type { Pt, Route } from './odsay.ts';
 import { applyRealtime, type Headways, type PlanResults, type Schedules } from './realtime.ts';
 
 // "이 경로로 갈게요"로 따라가는 경로 (순수 함수만, 화면 상태는 app/page.tsx)
@@ -86,9 +87,14 @@ export function riding(f: Frozen, nowMs: number, results: PlanResults, headways:
   return { ...re, rode: k, ...bus, candidate: { ...re.candidate, legs: [...done, on, ...tail] }, eta: { ...eta, boards: [...done.map(() => zero), ...eta.boards] } };
 }
 
-// 탑승 뒤 20초 갱신의 검색 출발지: 탄 것으로 판정됐고 내 GPS가 있으면 지금 위치, 아니면 처음 출발지 그대로.
-export function searchOrigin<P extends { lat: number; lng: number }>(boarded: boolean, me: { lat: number; lng: number } | undefined, orig: P): P {
-  return boarded && me ? { ...orig, lat: me.lat, lng: me.lng } : orig;
+// 20초 갱신의 검색 출발지. 탑승 뒤엔 내 위치 (MUS2-26). 탑승 전이라도 출발이 "현재 위치"면 갱신 때마다 GPS로 다시 잡는다 (MUS2-29).
+// 단, 정확도가 나쁘거나 마지막으로 쓴 좌표(last)에서 30m 이내면 last를 그대로 둔다. 직접 고른 출발지(here=false)는 고정.
+export function searchOrigin<P extends Pt>(boarded: boolean, here: boolean, gps: (Pt & { acc?: number }) | undefined, last: Pt, orig: P): P {
+  if (boarded && gps) return { ...orig, lat: gps.lat, lng: gps.lng };
+  if (!here) return orig;
+  const moved = !!gps && (gps.acc ?? 0) <= HERE_ACC_M && distM(last, gps) > HERE_STILL_M;
+  const c = moved && gps ? gps : last;
+  return { ...orig, lat: c.lat, lng: c.lng };
 }
 
 // 버스의 실제 속도 배율 (1 = 시간표대로, >1 = 느림). prev→now 사이 내릴 곳까지 남은 정류장이 줄어든 만큼이 실제 진행,

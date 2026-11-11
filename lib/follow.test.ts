@@ -102,9 +102,17 @@ test('내 버스가 이미 지나갔고 뒤차만 있으면 시간표대로 (뒤
 import { onBus, pace, searchOrigin } from './follow.ts';
 const A = { lat: 33.45, lng: 126.56 }, G = { lat: 33.5, lng: 126.6 };
 test('searchOrigin: 탑승 전·위치 없음은 그대로, 탑승 후엔 내 위치', () => {
-  assert.deepEqual(searchOrigin(false, G, A), A); // (a)
-  assert.deepEqual(searchOrigin(true, G, { ...A, name: '제주대' }), { ...G, name: '제주대' }); // (b)
-  assert.deepEqual(searchOrigin(true, undefined, A), A); // (d)
+  assert.deepEqual(searchOrigin(false, false, G, A, A), A); // 직접 고른 출발지는 GPS가 있어도 고정
+  assert.deepEqual(searchOrigin(true, false, G, A, { ...A, name: '제주대' }), { ...G, name: '제주대' }); // 탑승 뒤엔 내 위치
+  assert.deepEqual(searchOrigin(true, false, undefined, A, A), A); // 위치 없으면 그대로
+});
+test('searchOrigin: "현재 위치" 출발은 탑승 전에도 GPS로 다시 잡고, 나쁘면·조금 움직였으면 이전 좌표', () => {
+  const H = { ...A, name: '현재 위치' }, far = { lat: A.lat + 0.001, lng: A.lng }, near = { lat: A.lat + 0.0001, lng: A.lng };
+  assert.deepEqual(searchOrigin(false, true, { ...far, acc: 10 }, A, H), { ...far, name: '현재 위치' }); // (a) 새 GPS
+  assert.deepEqual(searchOrigin(false, true, { ...near, acc: 10 }, A, H), H); // (b) 30m 이내면 이전 좌표
+  assert.deepEqual(searchOrigin(false, true, { ...far, acc: 300 }, A, H), H); // (c) 정확도 200m 초과면 이전 좌표
+  assert.deepEqual(searchOrigin(false, true, undefined, A, H), H); // 위치를 못 읽으면 이전 좌표
+  assert.deepEqual(searchOrigin(false, false, { ...far, acc: 10 }, A, { ...H, name: '제주대' }), { ...A, name: '제주대' }); // (d) 직접 고른 출발지는 고정
 });
 test('pace: 시간표보다 느리면 >1, 빠르면 <1, 상·하한, 정보 부족은 1', () => {
   const p = { key: 'a:b', left: 20, t: 0 };
