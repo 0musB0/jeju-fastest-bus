@@ -123,3 +123,9 @@ export function tripsToRoutes(trips: Trip[], existing: Route[]): Route[] {
 export function fallbackLoc(loc: BusLocation, prev: { t: number; loc: BusLocation } | undefined, now: number, ttlMs: number): { loc: BusLocation; ageSec?: number } {
   return !loc.ok && prev?.loc.ok && now - prev.t < ttlMs ? { loc: prev.loc, ageSec: Math.round((now - prev.t) / 1000) } : { loc };
 }
+
+// 실시간 배치 하나의 요청 제한 시간. 남은 시간(leftMs)이 minMs보다 짧으면 null = 새 배치를 보내지 않는다.
+// 짧은 제한 시간으로 보내면 제주 서버의 3초대 응답이 TimeoutError로 실패했다 (3003-1, 2026-11-11).
+export function batchTimeout(leftMs: number, minMs = 4000, maxMs = 6000): number | null {
+  return leftMs < minMs ? null : Math.min(maxMs, leftMs);
+}
