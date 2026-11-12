@@ -109,3 +109,19 @@ test('batchTimeout: 남은 시간이 짧으면 새 배치를 보내지 않고, �
   assert.equal(batchTimeout(4500), 4500); // 남은 시간 전부를 준다 (3초대 응답이 들어갈 시간)
   assert.equal(batchTimeout(3999), null); // 이보다 짧으면 TimeoutError로 실패하니 보내지 않는다
 });
+
+test('노선별 격리: 한 구간의 조회가 실패해도 다른 구간은 실시간, 실패 구간만 시간표 값', () => {
+  const two: Route = {
+    candidate: { legs: [{ walkBeforeMin: 1, rideMin: 10 }, { walkBeforeMin: 1, rideMin: 10 }], walkAfterMin: 1 },
+    rides: [
+      { busNos: ['3003-1'], routeIds: ['A'], stationId: 's1', from: 'a', to: 'b', stops: 4 },
+      { busNos: ['365'], routeIds: ['B'], stationId: 's2', from: 'b', to: 'c', stops: 4 },
+    ],
+    fare: 1150, odsayMin: 22,
+  };
+  const r = applyRealtime(two, { 'A:s1': { error: '실시간 API 응답 없음 (TimeoutError)' }, 'B:s2': [4] }, {}, { scheduled: { 'A:s1': [9], 'B:s2': [20] } });
+  const [a, b] = r.candidate.legs;
+  assert.equal(a.nextBusesMin, undefined); // 실패 구간: 실시간 없음 → 시간표
+  assert.deepEqual(a.timetableMin, [9]);
+  assert.deepEqual(b.nextBusesMin, [10]); // 성공 구간: 실시간 유지 (4정류장 × 2.5분)
+});

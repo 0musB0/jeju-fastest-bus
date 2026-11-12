@@ -372,10 +372,11 @@ export default function Home() {
         return !v.some(Array.isArray) && v.some((y) => !Array.isArray(y) && y.error !== '이 노선에 없는 정류장');
       };
       // 이유를 말해 준다: 어느 번호가 어떤 이유로 못 받았는지, 직전 위치로 대신했다면 몇 초 전인지
-      const bad = next.map((r) => r.rides[0]).find((x) => x && noLive(x));
+      // 실패한 노선만 말한다 (나머지는 실시간 그대로). 직전 위치로 대신한 노선은 몇 초 전 값인지
+      const nosOf = (xs: (Route['rides'][number] | undefined)[]) => [...new Set(xs.flatMap((x) => (x ? [x.busNos[0]] : [])))].join('·');
+      const bad = next.map((r) => r.rides[0]).filter((x) => x && noLive(x));
       const old = next.map((r) => r.rides[0]).find((x) => x?.routeIds.some((id) => staleSec[id]));
-      const why = (x: Route['rides'][number]) => (x.routeIds.map((id) => results[`${id}:${x.stationId}`]).find((y) => y && !Array.isArray(y)) as { error: string } | undefined)?.error ?? '';
-      if (Object.keys(results).length) setRtWhy(bad ? `${bad.busNos[0]}번 버스 위치를 받지 못해 시간표로 계산했어요 (${why(bad).replace('실시간 API 응답 없음', '응답 지연')}).` : old ? `${old.busNos[0]}번 버스 위치는 ${Math.min(...old.routeIds.flatMap((id) => staleSec[id] ?? []))}초 전 값이에요.` : '');
+      if (Object.keys(results).length) setRtWhy(bad.length ? `${nosOf(bad)}번만 시간표 기준이에요.` : old ? `${old.busNos[0]}번 버스 위치는 ${Math.min(...old.routeIds.flatMap((id) => staleSec[id] ?? []))}초 전 값이에요.` : '');
       // 따라갈 경로: "이 경로로 갈게요"를 누른 경로, 아니면 카드를 눌러 고른 경로, 아니면 목록에서 빠진 1위.
       // 고른 경로가 빠지는 건 보통 그 버스를 이미 타서 정류장을 지났기 때문이다. 예전에는 그때 화면을 마지막 계산 그대로 멈췄는데,
       // 탄 뒤에도 버스 위치·갈아탈 버스를 계속 실시간으로 다시 계산한다 (사용자 요청 2026-11-03)

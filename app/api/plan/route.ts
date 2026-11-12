@@ -33,7 +33,7 @@ const ID = /^\d{9}$/;
 // 실시간 조회 노선 수. 10개일 때 첫 구간 가지 노선만으로 다 차서 환승 구간은 늘 시간표였다 (공항→중문 39개 후보, 2026-11-03)
 const MAX_ROUTES = 16;
 const RT_END_MS = 8500; // 마지막 요청까지 합친 상한 (Vercel Hobby 10초 제한 안). 남은 시간이 4초보다 짧으면 새 배치를 보내지 않는다 (lib/realtime.ts batchTimeout)
-const STALE_MS = 45000; // 조회가 실패하면 이 안에 받아 둔 위치를 쓴다 (화면에 'N초 전 위치')
+const STALE_MS = 60000; // 조회가 실패하면 이 안에 받아 둔 위치를 쓴다 (화면에 'N초 전 위치')
 const TOP_TRIPS = 6; // 실시간을 먼저 채울 상위 후보 수 (화면에는 3개, 갱신 때 순위가 바뀌는 것 대비)
 const MAX_PAIRS = 60; // 시간표는 로컬 데이터라 더 많이 본다
 const CONCURRENCY = 2;
@@ -46,8 +46,10 @@ const point = (v: string | null) => {
 
 // 직전에 성공한 위치 (함수 인스턴스 메모리). 실패했을 때만 STALE_MS 안의 값을 대신 쓴다. 성공하면 늘 새 값이라 옛 위치가 먼저 나오지 않는다.
 const lastOk = new Map<string, { t: number; loc: Awaited<ReturnType<typeof fetchLocation>> }>();
-async function busLocation(r: string, timeoutMs: number) {
-  const loc = await fetchLocation(r, timeoutMs);
+async function busLocation(r: string, timeoutMs: number, deadline: number) {
+  let loc = await fetchLocation(r, timeoutMs);
+  // 실패하면 짧게 쉬고 1회 재시도 (남은 시간이 충분할 때만, 이 노선만)
+  if (!loc.ok && deadline - Date.now() > 2500) { await new Promise((ok) => setTimeout(ok, 300)); loc = await fetchLocation(r, Math.min(timeoutMs, deadline - Date.now() - 100)); }
   if (loc.ok) lastOk.set(r, { t: Date.now(), loc });
   return loc;
 }
@@ -112,7 +114,7 @@ export async function GET(req: Request) {
     const timeout = batchTimeout(RT_END_MS - (Date.now() - t0));
     if (timeout === null) break;
     await Promise.all(routeIds.slice(i, i + CONCURRENCY).map(async (r) => {
-      const got = fallbackLoc(await busLocation(r, timeout), lastOk.get(r), Date.now(), STALE_MS);
+      const got = fallbackLoc(await busLocation(r, timeout, t0 + RT_END_MS), lastOk.get(r), Date.now(), STALE_MS);
       if (got.ageSec !== undefined) stale[r] = got.ageSec;
       locs.set(r, got.loc);
     }));
