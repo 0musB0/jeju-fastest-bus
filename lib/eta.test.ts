@@ -100,3 +100,10 @@ test('실시간상 오는 버스가 없으면 시간표 버스는 안 쓰고 아
   const { nextBusesMin, ...noLive } = leg;
   assert.equal(arrivalMin({ legs: [noLive], walkAfterMin: 13 })!.boards[0].at, 2);
 });
+
+test('환승 구간은 시간표 pending이 더 빨라도 실시간 버스를 쓴다', () => {
+  const c = { legs: [{ walkBeforeMin: 0, nextBusesMin: [5], rideMin: 10 }, { walkBeforeMin: 0, nextBusesMin: [22], pendingMin: [19], rideMin: 10 }], walkAfterMin: 0 };
+  const b = arrivalMin(c)!.boards[1];
+  assert.equal(b.at, 22);
+  assert.equal(b.how, 'realtime');
+});
