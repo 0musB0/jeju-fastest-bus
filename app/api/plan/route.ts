@@ -136,6 +136,17 @@ export async function GET(req: Request) {
       if (m) rtMin[`${r}:${s}`] = m.map((x) => Math.round(x * 10) / 10);
     }
   }
+  // 종점 추정: 출발지가 노선 첫 정류장(종점)이면 기점 출발 전이라 실시간에 버스가 안 보인다.
+  // 단순화: 같은 노선에서 가장 끝쪽(기점에서 먼)에 있는 버스가 종점까지 남은 정류장 수 × 1.5분 뒤 다시 출발한다고 본다.
+  // 가정 미검증: 실제 회차 방향·종점 대기는 실측 전이다. 기점 출발 버스가 없으면 추정하지 않는다.
+  const estMin: Record<string, number> = {};
+  for (const [r, s] of allPairs) {
+    const loc = locs.get(r)!, route = routeById.get(r);
+    if (!loc.ok || route?.stops[0] !== s || !loc.stops.length) continue;
+    const firstOrd = Math.min(...loc.stops.map((x) => x.ord)), lastOrd = Math.max(...loc.stops.map((x) => x.ord));
+    const ahead = loc.stops.filter((x) => x.bus && x.ord > firstOrd).map((x) => x.ord);
+    if (ahead.length) estMin[`${r}:${s}`] = terminalEstimateMin(lastOrd - Math.max(...ahead), 0);
+  }
   // 따라가는 경로(pin) 구간만: 남은 정류장 수 → 그 버스가 지금 있는 정류장 (화면에 탄 버스 위치)
   const pos: Record<string, Record<number, { name: string; lat: number; lng: number }>> = {};
   for (const [r, s] of pinPairs) {
@@ -217,5 +228,5 @@ export async function GET(req: Request) {
     walkAll = Math.round((ok ? r.m : distM(from, to) * WALK_DETOUR) / WALK_M_PER_MIN);
     walkAllPath = ok ? r.path : [from, to];
   }
-  return Response.json({ results, stale, rtMin, pos, headways, scheduled, pending, firstBus, trips: out, paths, stopsOk, walkFrom, walkTo, walkAll, walkAllPath });
+  return Response.json({ results, stale, rtMin, estMin, pos, headways, scheduled, pending, firstBus, trips: out, paths, stopsOk, walkFrom, walkTo, walkAll, walkAllPath });
 }

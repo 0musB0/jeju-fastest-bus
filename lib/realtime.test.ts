@@ -125,3 +125,13 @@ test('노선별 격리: 한 구간의 조회가 실패해도 다른 구간은 �
   assert.deepEqual(a.timetableMin, [9]);
   assert.deepEqual(b.nextBusesMin, [10]); // 성공 구간: 실시간 유지 (4정류장 × 2.5분)
 });
+
+test('종점 추정 연결: schedules.estMin이 첫 구간 estMin으로 들어가고 추정 시각이 "추정"으로 계산된다', async () => {
+  const { arrivalMin } = await import('./eta.ts');
+  const ride = { busNos: ['365'], routeIds: ['405136501'], stationId: '405000153', from: '공항', to: '시청', stops: 4 };
+  const r0 = { candidate: { legs: [{ walkBeforeMin: 2, rideMin: 10 }], walkAfterMin: 3 }, rides: [ride], fare: 0, odsayMin: 15 };
+  const r = applyRealtime(r0, {}, {}, { estMin: { '405136501:405000153': 7.5 } });
+  assert.equal(r.candidate.legs[0].estMin, 7.5);
+  const eta = arrivalMin(r.candidate)!;
+  assert.deepEqual({ min: eta.min, how: eta.boards[0].how, source: eta.source }, { min: 20.5, how: 'estimate', source: 'estimate' });
+});
