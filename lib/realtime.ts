@@ -49,7 +49,8 @@ export function headwayMin(loc: { bus: boolean }[]): number | undefined {
 export type PlanResults = Record<string, number[] | { error: string }>;
 export type Headways = Record<string, number>;
 // 시간표: "노선:정류장" → 지금부터 몇 분 뒤 오는지 / 오늘 운행이 끝났으면 첫차 시각(자정부터 분)
-export type Schedules = { rtMin?: Record<string, number[]>; scheduled?: Record<string, number[]>; pending?: Record<string, number[]>; firstBus?: Record<string, number> };
+// estMin: 종점 추정 (출발지가 노선 첫 정류장일 때 이 정류장에 닿는 분, lib/eta.ts terminalEstimateMin)
+export type Schedules = { rtMin?: Record<string, number[]>; scheduled?: Record<string, number[]>; pending?: Record<string, number[]>; firstBus?: Record<string, number>; estMin?: Record<string, number> };
 
 // 서버에 보낼 "노선:정류장" 쌍. first = 첫 버스(실시간 대상), 아니면 환승 버스(시간표만 씀).
 // ODsay 구간 → "노선:탈 정류장:내릴 정류장". 서버가 우리 노선 데이터에서 그 노선이 두 정류장에 차례로 서는지 확인한다.
