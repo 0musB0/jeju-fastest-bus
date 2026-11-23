@@ -1,4 +1,4 @@
-import { BOARD_MARGIN_MIN, TRANSFER_MARGIN_MIN } from './config.ts';
+import { BOARD_MARGIN_MIN, MIN_PER_STOP, TRANSFER_MARGIN_MIN } from './config.ts';
 
 // 버스 한 번 타는 구간. 모든 분(min) 값은 "지금"으로부터가 아니라 구간 길이다. nextBusesMin만 "지금"부터의 분.
 export type BusLeg = {
@@ -6,16 +6,21 @@ export type BusLeg = {
   nextBusesMin?: number[]; // ① 실시간: 지금부터 몇 분 뒤 도착하는지 (가까운 순)
   timetableMin?: number[]; // ② 시간표: 지금부터 몇 분 뒤 이 정류장에 오는지 (가까운 순)
   pendingMin?: number[]; // 시간표 버스 중 아직 기점을 떠나지 않아 실시간에 안 보이는 것
+  estMin?: number; // ①-2 종점 추정: 종점에서 아직 출발 전인 버스가 이 정류장에 닿는 시각 (terminalEstimateMin, 실시간 위치 기반이라 시간표보다 먼저 씀)
   intervalMin?: number; // ③ 배차 간격 (시간표가 없을 때)
   rideMin: number;
   src?: [number, string][]; // 위 분 값마다 어느 노선(routeId)의 버스인지: 화면에 실제로 탈 버스 번호 하나만 보여줌
 };
 export type Candidate = { legs: BusLeg[]; walkAfterMin: number };
-export type WaitSource = 'realtime' | 'timetable' | 'unknown';
+export type WaitSource = 'realtime' | 'timetable' | 'estimate' | 'unknown';
+
+// 종점 추정: 종점으로 들어오는 앞 운행 버스가 종점까지 stopsToTerminal 정류장 남았고, 종점에서 우리 정류장까지 stopsFromTerminal 정류장이면
+// 지금부터 이 정류장에 닿는 분. 단순화: 종점 회차(대기) 시간은 0으로 보고 정류장당 평균 소요만 씀
+export const terminalEstimateMin = (stopsToTerminal: number, stopsFromTerminal: number) => (stopsToTerminal + stopsFromTerminal) * MIN_PER_STOP;
 
 // 목적지 도착까지 지금부터 몇 분인지. 대기를 추정할 수 없으면 null (순위 맨 뒤).
 // boards: 구간마다 버스에 타는 시각(지금부터 분), 정류장에 닿는 시각, 그 값을 어떻게 얻었는지 (화면에 환승 버스 도착을 보여줌)
-export type Board = { at: number; atStop: number; how: 'realtime' | 'timetable' | 'interval' };
+export type Board = { at: number; atStop: number; how: 'realtime' | 'timetable' | 'interval' | 'estimate' };
 export function arrivalMin(c: Candidate): { min: number; source: WaitSource; boards: Board[] } | null {
   let t = 0;
   const boards: Board[] = [];
@@ -36,10 +41,16 @@ export function arrivalMin(c: Candidate): { min: number; source: WaitSource; boa
     // 환승 구간(i>0)은 시간표 pending이 더 빨라도 실시간 버스가 있으면 실시간 (342→182→301 182가 '19분 뒤 시간표'로 나옴, 2026-11-17)
     // 실시간 버스를 다 못 타면 그 뒤 시간표 버스 (시간표의 출발 순번 어림이 틀려 pending에서 빠진 버스 대비)
     const scheduled = leg.timetableMin?.find((b) => canBoard(b) && (!live || (buses.length > 0 && b > buses[buses.length - 1])));
+    // 종점 추정은 시간표보다 정확하다 (실시간 위치로 잰 값). 실시간 버스가 없는 첫 구간에서만 쓴다
+    const est = i === 0 && bus === undefined && leg.estMin !== undefined && canBoard(leg.estMin) ? leg.estMin : undefined;
     let board: number;
     let how: Board['how'] = 'timetable';
     if (bus !== undefined && (i > 0 || !(pend !== undefined && pend < bus))) (board = bus), (how = 'realtime');
-    else if (pend !== undefined) {
+    else if (est !== undefined) {
+      board = est;
+      how = 'estimate';
+      source = 'estimate';
+    } else if (pend !== undefined) {
       board = pend;
       source = 'timetable';
     } else if (scheduled !== undefined) {

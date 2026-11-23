@@ -299,7 +299,7 @@ export default function Home() {
         staleSec = r.stale ?? {};
         headways = r.headways ?? {};
         setPos(r.pos ?? {});
-        sched = { rtMin: r.rtMin, scheduled: r.scheduled, pending: r.pending, firstBus: r.firstBus };
+        sched = { rtMin: r.rtMin, scheduled: r.scheduled, pending: r.pending, firstBus: r.firstBus, estMin: r.estMin };
         trips = r.trips ?? [];
         walkAll = typeof r.walkAll === 'number' ? r.walkAll : null;
         if (!refresh) (setWalkMin(walkAll), setWalkPath(r.walkAllPath));
@@ -567,6 +567,7 @@ export default function Home() {
                   // 모두 "지금부터" 몇 분 뒤 (사용자 요청 2026-11-02: 시각 대신 "N시간 M분 뒤 도착")
                   : b ? (b.how === 'realtime' ? <span className="when live">{dur(Math.max(0, b.at))} 뒤 도착<small>실시간</small></span>
                     : b.how === 'interval' ? <span className="when">약 {dur(b.at)} 뒤 도착<small>배차 어림</small></span>
+                    : b.how === 'estimate' ? <span className="when">약 {dur(b.at)} 뒤 도착<small>추정</small></span>
                     : <span className="when">{dur(b.at)} 뒤 도착<small>시간표</small></span>)
                   : j === 0 && r.firstBus !== undefined ? <span className="when off">{r.firstBus > kstMinutes(at!) ? '첫차 전' : '운행 끝'}<small>첫차 {clock12(r.firstBus)}</small></span>
                   : <span className="when off">{ended ? '막차 지났을 수 있음' : j === 0 && r.noBusNow ? '운행 버스 없음' : '정보 없음'}</span>;
