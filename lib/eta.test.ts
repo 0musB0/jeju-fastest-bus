@@ -101,6 +101,25 @@ test('실시간상 오는 버스가 없으면 시간표 버스는 안 쓰고 아
   assert.equal(arrivalMin({ legs: [noLive], walkAfterMin: 13 })!.boards[0].at, 2);
 });
 
+test('환승 구간(2·3번째)은 시간표 pending이 더 빨라도 실시간 버스를 쓴다', () => {
+  const c = {
+    legs: [
+      { walkBeforeMin: 0, nextBusesMin: [5], rideMin: 10 },
+      { walkBeforeMin: 0, nextBusesMin: [22], pendingMin: [19], rideMin: 10 },
+      { walkBeforeMin: 0, nextBusesMin: [40], pendingMin: [36], rideMin: 10 },
+    ],
+    walkAfterMin: 0,
+  };
+  const { boards } = arrivalMin(c)!;
+  assert.deepEqual(
+    boards.slice(1).map((b) => ({ at: b.at, how: b.how })),
+    [
+      { at: 22, how: 'realtime' },
+      { at: 40, how: 'realtime' },
+    ],
+  );
+});
+
 test('종점 추정: 앞 버스가 종점까지 3정류장·종점에서 2정류장 → 7.5분 (정류장당 1.5분)', () => {
   assert.equal(terminalEstimateMin(3, 2), 7.5);
 });

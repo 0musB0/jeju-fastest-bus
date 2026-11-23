@@ -38,13 +38,14 @@ export function arrivalMin(c: Candidate): { min: number; source: WaitSource; boa
     // 실시간이 기준이다 (사용자 요청 2026-11-02). 시간표는 실시간에 안 보이는 버스, 곧 아직 기점을 떠나지 않은 버스(pending)에만 쓰고,
     // 실시간 위치를 못 받은 구간에서만 시간표 전체를 쓴다. 환승 구간도 같다.
     const pend = live ? leg.pendingMin?.find(canBoard) : undefined;
+    // 환승 구간(i>0)은 시간표 pending이 더 빨라도 실시간 버스가 있으면 실시간 (342→182→301 182가 '19분 뒤 시간표'로 나옴, 2026-11-17)
     // 실시간 버스를 다 못 타면 그 뒤 시간표 버스 (시간표의 출발 순번 어림이 틀려 pending에서 빠진 버스 대비)
     const scheduled = leg.timetableMin?.find((b) => canBoard(b) && (!live || (buses.length > 0 && b > buses[buses.length - 1])));
     // 종점 추정은 시간표보다 정확하다 (실시간 위치로 잰 값). 실시간 버스가 없는 첫 구간에서만 쓴다
     const est = i === 0 && bus === undefined && leg.estMin !== undefined && canBoard(leg.estMin) ? leg.estMin : undefined;
     let board: number;
     let how: Board['how'] = 'timetable';
-    if (bus !== undefined && !(pend !== undefined && pend < bus)) (board = bus), (how = 'realtime');
+    if (bus !== undefined && (i > 0 || !(pend !== undefined && pend < bus))) (board = bus), (how = 'realtime');
     else if (est !== undefined) {
       board = est;
       how = 'estimate';
