@@ -51,7 +51,9 @@ async function fetchLocation(r: string, timeoutMs: number) {
 export async function GET(req: Request) {
   const blocked = guardRequest(req, 'plan', PLAN_RATE_PER_MIN);
   if (blocked) return blocked;
-  const { stationName, stationById, routeById, index, tableOf, rideMin } = getPlanData(); // 12MB 데이터는 막힌 요청이 아닌 여기서 처음 읽는다
+  const D0 = Date.now(), diag: Record<string, number | string> = {};
+  const { stationName, stationById, routeById, index, tableOf, rideMin } = getPlanData();
+  diag.data = Date.now() - D0; // 12MB 데이터는 막힌 요청이 아닌 여기서 처음 읽는다
   const p = new URL(req.url).searchParams;
   // q = ODsay 경로의 첫 버스, later = 환승 버스 (환승 버스는 시간표만 쓰므로 실시간 조회는 안 함)
   const parse = (v: string | null) => (v ?? '').split(',').map((x) => x.split(':'))
@@ -62,7 +64,9 @@ export async function GET(req: Request) {
   const walker = from || to ? getWalker() : undefined; // 걷는 길 7.7MB: 출발·도착 좌표가 있는 요청에서만 읽는다 (지도 선만 받는 요청은 안 읽음)
   // 평일 퇴근길엔 시간표 소요보다 오래 걸린다 (실측 배율, lib/config.ts RUSH_RIDE). 실시간 대기의 정류장당 소요도 여기서 나와 같이 늘어난다
   const rf = rideFactor(new Date());
+  diag.walker = Date.now() - D0;
   const trips = from && to ? findTrips(from, to, index, rf === 1 ? rideMin : (r, i, j) => Math.round(rideMin(r, i, j) * rf), 20, walker) : [];
+  diag.trips = Date.now() - D0;
   const tripFirst = trips.flatMap((t) => t.legs[0].routeIds.map((r) => [r, t.legs[0].fromId]));
   const tripLater = trips.flatMap((t) => t.legs.slice(1).flatMap((l) => l.routeIds.map((r) => [r, l.fromId])));
 
@@ -98,7 +102,9 @@ export async function GET(req: Request) {
     const timeout = batchTimeout(RT_END_MS - (Date.now() - t0));
     if (timeout === null) break;
     await Promise.all(routeIds.slice(i, i + CONCURRENCY).map(async (r) => {
+      const L0 = Date.now();
       const got = fallbackLoc(await busLocation(r, timeout, t0 + RT_END_MS), lastOk.get(r), Date.now(), STALE_MS);
+      diag[`rt${r}`] = `${Date.now() - L0}ms@${L0 - D0} to=${timeout} ${got.loc.ok ? 'ok' : (got.loc as { reason: string }).reason}`;
       if (got.ageSec !== undefined) stale[r] = got.ageSec;
       locs.set(r, got.loc);
     }));
@@ -201,5 +207,6 @@ export async function GET(req: Request) {
     walkAll = Math.round((ok ? r.m : distM(from, to) * WALK_DETOUR) / WALK_M_PER_MIN);
     walkAllPath = ok ? r.path : [from, to];
   }
+  if (p.get('diag')) return Response.json({ diag, n: routeIds.length });
   return Response.json({ results, stale, rtMin, pos, headways, scheduled, pending, firstBus, trips: out, paths, stopsOk, walkFrom, walkTo, walkAll, walkAllPath });
 }
