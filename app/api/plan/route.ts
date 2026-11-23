@@ -2,6 +2,7 @@ import { headwayMin, parseBusLocation, minsAway, stopsAway, fallbackLoc, batchTi
 import { guardRequest } from '../../../lib/guard.ts';
 import { getPlanData, getWalker } from '../../../lib/data.ts';
 import { distM, findTrips, inJeju, legPath, type Trip } from '../../../lib/direct.ts';
+import { terminalEstimateMin } from '../../../lib/eta.ts';
 import { arrivals, firstAt, kstDay, kstMinutes, offsetAt, rideFactor } from '../../../lib/timetable.ts';
 import { LOC_TTL_MS, PLAN_RATE_PER_MIN, WALK_DETOUR, WALK_M_PER_MIN, WALK_TREE_M } from '../../../lib/config.ts';
 
@@ -51,9 +52,7 @@ async function fetchLocation(r: string, timeoutMs: number) {
 export async function GET(req: Request) {
   const blocked = guardRequest(req, 'plan', PLAN_RATE_PER_MIN);
   if (blocked) return blocked;
-  const D0 = Date.now(), diag: Record<string, number | string> = {};
   const { stationName, stationById, routeById, index, tableOf, rideMin } = getPlanData();
-  diag.data = Date.now() - D0; // 12MB 데이터는 막힌 요청이 아닌 여기서 처음 읽는다
   const p = new URL(req.url).searchParams;
   // q = ODsay 경로의 첫 버스, later = 환승 버스 (환승 버스는 시간표만 쓰므로 실시간 조회는 안 함)
   const parse = (v: string | null) => (v ?? '').split(',').map((x) => x.split(':'))
@@ -64,9 +63,7 @@ export async function GET(req: Request) {
   const walker = from || to ? getWalker() : undefined; // 걷는 길 7.7MB: 출발·도착 좌표가 있는 요청에서만 읽는다 (지도 선만 받는 요청은 안 읽음)
   // 평일 퇴근길엔 시간표 소요보다 오래 걸린다 (실측 배율, lib/config.ts RUSH_RIDE). 실시간 대기의 정류장당 소요도 여기서 나와 같이 늘어난다
   const rf = rideFactor(new Date());
-  diag.walker = Date.now() - D0;
   const trips = from && to ? findTrips(from, to, index, rf === 1 ? rideMin : (r, i, j) => Math.round(rideMin(r, i, j) * rf), 20, walker) : [];
-  diag.trips = Date.now() - D0;
   const tripFirst = trips.flatMap((t) => t.legs[0].routeIds.map((r) => [r, t.legs[0].fromId]));
   const tripLater = trips.flatMap((t) => t.legs.slice(1).flatMap((l) => l.routeIds.map((r) => [r, l.fromId])));
 
@@ -102,9 +99,7 @@ export async function GET(req: Request) {
     const timeout = batchTimeout(RT_END_MS - (Date.now() - t0));
     if (timeout === null) break;
     await Promise.all(routeIds.slice(i, i + CONCURRENCY).map(async (r) => {
-      const L0 = Date.now();
       const got = fallbackLoc(await busLocation(r, timeout, t0 + RT_END_MS), lastOk.get(r), Date.now(), STALE_MS);
-      diag[`rt${r}`] = `${Date.now() - L0}ms@${L0 - D0} to=${timeout} ${got.loc.ok ? 'ok' : (got.loc as { reason: string }).reason}`;
       if (got.ageSec !== undefined) stale[r] = got.ageSec;
       locs.set(r, got.loc);
     }));
@@ -125,6 +120,17 @@ export async function GET(req: Request) {
       const m = minsAway(parked ? loc.stops.map((x, k) => (k === 0 ? { ...x, bus: false } : x)) : loc.stops, s, (o) => offsetAt(e.p, o) * rf);
       if (m) rtMin[`${r}:${s}`] = m.map((x) => Math.round(x * 10) / 10);
     }
+  }
+  // 종점 추정: 출발지가 노선 첫 정류장(기점)이면 기점 출발 전이라 실시간에 버스가 안 보인다.
+  // 단순화: 같은 노선에서 기점에서 가장 먼 버스가 마지막 정류장까지 간 뒤 같은 정류장들을 거꾸로 돌아 기점에 닿는 시간을 잰다(회차 대기 0).
+  // 미검증 가정: 그 버스가 같은 노선 정류장을 거꾸로 달린다고 본다. 실제 회차 방향은 실측 전이다. 버스가 없으면 추정하지 않는다.
+  const estMin: Record<string, number> = {};
+  for (const [r, s] of allPairs) {
+    const loc = locs.get(r)!, route = routeById.get(r);
+    if (!loc.ok || route?.stops[0] !== s || !loc.stops.length) continue;
+    const firstOrd = Math.min(...loc.stops.map((x) => x.ord)), lastOrd = Math.max(...loc.stops.map((x) => x.ord));
+    const ahead = loc.stops.filter((x) => x.bus && x.ord > firstOrd).map((x) => x.ord);
+    if (ahead.length) estMin[`${r}:${s}`] = terminalEstimateMin((lastOrd - Math.max(...ahead)) + (lastOrd - firstOrd), 0);
   }
   // 따라가는 경로(pin) 구간만: 남은 정류장 수 → 그 버스가 지금 있는 정류장 (화면에 탄 버스 위치)
   const pos: Record<string, Record<number, { name: string; lat: number; lng: number }>> = {};
@@ -207,6 +213,5 @@ export async function GET(req: Request) {
     walkAll = Math.round((ok ? r.m : distM(from, to) * WALK_DETOUR) / WALK_M_PER_MIN);
     walkAllPath = ok ? r.path : [from, to];
   }
-  if (p.get('diag')) return Response.json({ diag, n: routeIds.length });
-  return Response.json({ results, stale, rtMin, pos, headways, scheduled, pending, firstBus, trips: out, paths, stopsOk, walkFrom, walkTo, walkAll, walkAllPath });
+  return Response.json({ results, stale, rtMin, estMin, pos, headways, scheduled, pending, firstBus, trips: out, paths, stopsOk, walkFrom, walkTo, walkAll, walkAllPath });
 }

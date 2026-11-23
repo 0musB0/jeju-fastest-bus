@@ -118,7 +118,7 @@ export function usePlanner({ from, to, setFrom, setTo, meRef }: { from: Place | 
         staleSec = r.stale ?? {};
         headways = r.headways ?? {};
         setPos(r.pos ?? {});
-        sched = { rtMin: r.rtMin, scheduled: r.scheduled, pending: r.pending, firstBus: r.firstBus };
+        sched = { rtMin: r.rtMin, scheduled: r.scheduled, pending: r.pending, firstBus: r.firstBus, estMin: r.estMin };
         trips = r.trips ?? [];
         walkAll = typeof r.walkAll === 'number' ? r.walkAll : null;
         if (!refresh) (setWalkMin(walkAll), setWalkPath(r.walkAllPath));
