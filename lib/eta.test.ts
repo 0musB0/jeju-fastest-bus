@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { arrivalMin, kstClock, kstClock12 } from './eta.ts';
+import { arrivalMin, kstClock, kstClock12, terminalEstimateMin } from './eta.ts';
 
 const ride = 20, walkAfter = 3;
 
@@ -99,4 +99,23 @@ test('실시간상 오는 버스가 없으면 시간표 버스는 안 쓰고 아
   // 실시간 조회 자체가 안 됐으면(nextBusesMin 없음) 시간표
   const { nextBusesMin, ...noLive } = leg;
   assert.equal(arrivalMin({ legs: [noLive], walkAfterMin: 13 })!.boards[0].at, 2);
+});
+
+test('종점 추정: 앞 버스가 종점까지 3정류장·종점에서 2정류장 → 7.5분 (정류장당 1.5분)', () => {
+  assert.equal(terminalEstimateMin(3, 2), 7.5);
+});
+
+test('종점 추정: 실시간 버스가 없으면 추정 시각을 쓰고 source는 estimate', () => {
+  const r = arrivalMin({ legs: [{ walkBeforeMin: 2, nextBusesMin: [], estMin: 7.5, rideMin: 10 }], walkAfterMin: 3 })!;
+  assert.deepEqual({ min: r.min, source: r.source, how: r.boards[0].how }, { min: 20.5, source: 'estimate', how: 'estimate' });
+});
+
+test('종점 추정: 실시간 버스를 탈 수 있으면 실시간이 우선', () => {
+  const r = arrivalMin({ legs: [{ walkBeforeMin: 2, nextBusesMin: [4], estMin: 7.5, rideMin: 10 }], walkAfterMin: 0 })!;
+  assert.deepEqual({ at: r.boards[0].at, how: r.boards[0].how }, { at: 4, how: 'realtime' });
+});
+
+test('종점 추정: 3분 여유 없이 닿는 추정 버스는 못 타서 배차 간격으로', () => {
+  const r = arrivalMin({ legs: [{ walkBeforeMin: 8, estMin: 7.5, intervalMin: 20, rideMin: 10 }], walkAfterMin: 0 })!;
+  assert.deepEqual({ at: r.boards[0].at, how: r.boards[0].how }, { at: 18, how: 'interval' });
 });
