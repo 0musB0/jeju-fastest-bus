@@ -10,9 +10,6 @@ on:
         default: false
 permissions:
   contents: write
-concurrency:
-  group: data-commit
-  cancel-in-progress: false
 jobs:
   fetch:
     runs-on: ubuntu-latest
