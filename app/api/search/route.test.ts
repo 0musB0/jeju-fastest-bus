@@ -1,6 +1,7 @@
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { GET } from './route.ts';
+import { SEARCH_RATE_PER_MIN } from '../../../lib/config.ts';
 
 const realFetch = globalThis.fetch;
 afterEach(() => { globalThis.fetch = realFetch; });
@@ -24,7 +25,7 @@ test('같은 IP가 분당 한도를 넘으면 429', async () => {
   kakao({ documents: [] });
   const ip = { 'x-forwarded-for': '7.7.7.7' };
   let last = 0;
-  for (let i = 0; i < 31; i++) last = (await GET(new Request('https://a.app/api/search?q=a', { headers: ip }))).status;
+  for (let i = 0; i <= SEARCH_RATE_PER_MIN; i++) last = (await GET(new Request('https://a.app/api/search?q=a', { headers: ip }))).status;
   assert.equal(last, 429);
 });
 

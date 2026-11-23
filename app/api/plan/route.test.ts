@@ -2,6 +2,7 @@ import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { GET } from './route.ts';
+import { PLAN_RATE_PER_MIN } from '../../../lib/config.ts';
 
 const data = <T>(n: string) => JSON.parse(readFileSync(`data/${n}`, 'utf8')) as T;
 const stations = new Map(data<{ id: string; lat: number; lng: number }[]>('stations.json').map((s) => [s.id, s]));
@@ -32,10 +33,10 @@ test('막힌 요청: 다른 사이트 403, 너무 긴 쿼리 414', async () => {
   assert.equal((await call(`q=${'1'.repeat(7000)}`)).status, 414);
 });
 
-test('같은 IP가 분당 40번을 넘으면 429', async () => {
+test('같은 IP가 분당 상한을 넘으면 429', async () => {
   const ip = { 'x-forwarded-for': '10.9.9.9' };
   let last = 0;
-  for (let i = 0; i < 41; i++) last = (await GET(new Request('https://a.app/api/plan?x=1', { headers: ip }))).status;
+  for (let i = 0; i <= PLAN_RATE_PER_MIN; i++) last = (await GET(new Request('https://a.app/api/plan?x=1', { headers: ip }))).status;
   assert.equal(last, 429);
 });
 

@@ -24,8 +24,8 @@ export const RUSH_RIDE: Record<number, number> = { 17: 1.1, 18: 1.05 };
 
 // API 보호 (lib/guard.ts). 화면은 20초마다 /api/plan을 부르므로 분당 3번쯤 쓰고, 검색은 사람이 누를 때만 부른다.
 export const API_MAX_QUERY = 6000; // 쿼리 문자열 상한(글자). 정상 요청은 4000자 안쪽 (노선:정류장 쌍 ~30개씩)
-export const PLAN_RATE_PER_MIN = 40; // IP당 /api/plan 분당 상한
-export const SEARCH_RATE_PER_MIN = 30; // IP당 /api/search 분당 상한
+export const PLAN_RATE_PER_MIN = 120; // IP당 /api/plan 분당 상한. 탭 하나가 분당 3~4번 쓰는데, 통신사 망은 여러 사용자가 IP 하나를 나눠 쓰므로(CGNAT) 30명분 여유를 둔다. 악용 방지는 한 IP가 분당 120번(실시간 노선 조회 최대 16×) 넘게 못 쓰게 하는 정도
+export const SEARCH_RATE_PER_MIN = 60; // IP당 /api/search 분당 상한 (사람이 검색 버튼을 누를 때만 부름)
 export const LOC_TTL_MS = 15000; // 같은 노선의 버스 위치를 이 시간 안에는 다시 받지 않고 나눠 쓴다 (화면 갱신 20초보다 짧아서 첫 화면이 옛 위치일 일은 없다)
 export const REFRESH_MS = 20_000; // 화면이 실시간·시간표를 다시 계산하는 주기 (lib/guard.ts의 분당 상한은 이 주기를 기준으로 잡음)
 export const WALK_TREE_M = 3000; // 걷는 길을 따라 재는 최대 반경, 버스 없이 걸어가는 경로를 보여주는 최대 거리
