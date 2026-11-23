@@ -1,9 +1,9 @@
 import { headwayMin, parseBusLocation, minsAway, stopsAway, fallbackLoc, batchTimeout, coalesced } from '../../../lib/realtime.ts';
 import { guardRequest } from '../../../lib/guard.ts';
 import { getPlanData, getWalker } from '../../../lib/data.ts';
-import { distM, findTrips, legPath, type Trip } from '../../../lib/direct.ts';
+import { distM, findTrips, inJeju, legPath, type Trip } from '../../../lib/direct.ts';
 import { arrivals, firstAt, kstDay, kstMinutes, offsetAt, rideFactor } from '../../../lib/timetable.ts';
-import { LOC_TTL_MS, PLAN_RATE_PER_MIN, WALK_DETOUR, WALK_M_PER_MIN } from '../../../lib/config.ts';
+import { LOC_TTL_MS, PLAN_RATE_PER_MIN, WALK_DETOUR, WALK_M_PER_MIN, WALK_TREE_M } from '../../../lib/config.ts';
 
 // 실시간: 노선별 버스 위치 → 우리 정류장까지 남은 정류장 수. 우리 데이터로 경로 후보(직행·환승 1번)도 여기서 찾는다.
 // 그 노선의 정류장 목록에 있는 정류장만 받고, 고정된 BusLocation 주소만 부르므로 아무 데나 부르는 프록시가 되지 않는다.
@@ -19,7 +19,7 @@ const CONCURRENCY = 2;
 const point = (v: string | null) => {
   const [lat, lng] = (v ?? '').split(',').map(Number);
   // 제주 범위 밖이면 직행 후보를 찾지 않는다
-  return lat > 33.1 && lat < 33.6 && lng > 126.08 && lng < 127 ? { lat, lng } : null;
+  return inJeju({ lat, lng }) ? { lat, lng } : null;
 };
 
 // 직전에 성공한 위치 (함수 인스턴스 메모리). 실패했을 때만 STALE_MS 안의 값을 대신 쓴다. 성공하면 늘 새 값이라 옛 위치가 먼저 나오지 않는다.
@@ -184,7 +184,7 @@ export async function GET(req: Request) {
   // ODsay 경로의 첫·마지막 걷기도 우리 걷는 길로 잰다 (ODsay 도보 시간이 실제보다 짧은 곳이 있음: 제주대학교입구 → 캠퍼스 안)
   const walkMins = (pt: { lat: number; lng: number } | null, ids: string | null) => {
     const res: Record<string, number> = {};
-    const tree = pt ? walker?.tree(pt, 3000) : null;
+    const tree = pt ? walker?.tree(pt, WALK_TREE_M) : null;
     for (const id of tree ? (ids ?? '').split(',').slice(0, 20) : []) {
       const s = ID.test(id) ? index.byId.get(id) : undefined;
       const r = s && tree!.to(s);
@@ -195,8 +195,8 @@ export async function GET(req: Request) {
   const walkFrom = walkMins(from, p.get('wf')), walkTo = walkMins(to, p.get('wt'));
   // 버스 없이 바로 걸어가는 시간 (3km 안만). 버스보다 빠르면 화면이 "걸어가세요"를 먼저 보여준다
   let walkAll: number | undefined, walkAllPath: { lat: number; lng: number }[] | undefined;
-  if (from && to && !p.get('lite') && distM(from, to) < 3000) {
-    const r = walker?.tree(from, 3000)?.to(to);
+  if (from && to && !p.get('lite') && distM(from, to) < WALK_TREE_M) {
+    const r = walker?.tree(from, WALK_TREE_M)?.to(to);
     const ok = r && isFinite(r.m);
     walkAll = Math.round((ok ? r.m : distM(from, to) * WALK_DETOUR) / WALK_M_PER_MIN);
     walkAllPath = ok ? r.path : [from, to];

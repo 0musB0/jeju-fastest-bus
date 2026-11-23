@@ -1,12 +1,12 @@
-import { JEJU_RECT, SEARCH_RATE_PER_MIN } from '../../../lib/config.ts';
+import { JEJU_RECT, KAKAO_TIMEOUT_MS, SEARCH_RATE_PER_MIN } from '../../../lib/config.ts';
+import { inJeju } from '../../../lib/direct.ts';
 import { guardRequest } from '../../../lib/guard.ts';
 
 type Place = { name: string; address: string; lat: number; lng: number };
-const [X1, Y1, X2, Y2] = JEJU_RECT.split(',').map(Number);
 // 외부 응답 검증: 좌표가 숫자이고 제주 안인 장소만 (카카오가 빈 값·이상한 값을 주면 NaN이 경로 계산까지 번지므로 여기서 버린다)
 const clean = (name: unknown, address: unknown, y: unknown, x: unknown): Place[] => {
   const lat = Number(y), lng = Number(x);
-  return typeof name === 'string' && name && Number.isFinite(lat) && Number.isFinite(lng) && lng >= X1 && lng <= X2 && lat >= Y1 && lat <= Y2
+  return typeof name === 'string' && name && inJeju({ lat, lng })
     ? [{ name, address: typeof address === 'string' ? address : '', lat, lng }] : [];
 };
 
@@ -21,7 +21,7 @@ export async function GET(req: Request) {
 
   const url = `https://dapi.kakao.com/v2/local/search/keyword.json?${new URLSearchParams({ query: q, rect: JEJU_RECT, size: '10' })}`;
   try {
-    const res = await fetch(url, { headers: { Authorization: `KakaoAK ${key}` }, signal: AbortSignal.timeout(3000) });
+    const res = await fetch(url, { headers: { Authorization: `KakaoAK ${key}` }, signal: AbortSignal.timeout(KAKAO_TIMEOUT_MS) });
     const body = await res.json();
     if (!res.ok || !Array.isArray(body?.documents)) {
       return Response.json({ error: '장소 검색 API 실패', status: res.status, reason: body?.message ?? body?.errorType }, { status: 502 });
@@ -30,7 +30,7 @@ export async function GET(req: Request) {
     // 장소 이름으로 없으면 주소("하귀로15길 47")로 찾는다. 주소 검색은 범위 지정이 없어 제주 안만 남긴다(clean이 거름).
     if (!places.length) {
       const r = await fetch(`https://dapi.kakao.com/v2/local/search/address.json?${new URLSearchParams({ query: q, size: '10' })}`,
-        { headers: { Authorization: `KakaoAK ${key}` }, signal: AbortSignal.timeout(3000) });
+        { headers: { Authorization: `KakaoAK ${key}` }, signal: AbortSignal.timeout(KAKAO_TIMEOUT_MS) });
       const a = await r.json();
       if (r.ok && Array.isArray(a?.documents)) places = (a.documents as { address_name?: string; road_address?: { address_name?: string; building_name?: string }; x?: string; y?: string }[])
         .flatMap((d) => clean(d?.road_address?.building_name || d?.road_address?.address_name || d?.address_name, d?.road_address?.address_name || d?.address_name, d?.y, d?.x));

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { rideFactor, arrivals, buildEntry, firstAt, kstDay, kstMinutes, offsetAt, parseTime, sameStop, tripsFor } from './timetable.ts';
+import { rideFactor, arrivals, buildEntry, firstAt, kstDay, kstMinutes, offsetAt, parseTime, sameStop, tripsFor, HOLIDAY_LAST_YEAR } from './timetable.ts';
 
 test('시각 칸 읽기', () => {
   assert.equal(parseTime('5:50(출발)'), 350);
@@ -182,4 +182,11 @@ test('공항을 안 지나는 변형(182-5)도 같은 운행이면 공항 거치
   // 성판악: via 5번째, skip 4번째 정류장. 07:00 기준 다음 버스는 두 변형 모두 08:45 = 105분 뒤
   assert.deepEqual(arrivals(a, 5, 420, 240), [105, 165]);
   assert.deepEqual(arrivals(b, 4, 420, 240), [105, 165]);
+});
+
+// 공휴일 목록은 손으로 적어서(공공 API 불가) 해가 바뀌면 낡는다. 올해 목록이 없거나, 11월부터는 다음 해 목록이 없으면 여기서 실패한다.
+// 실패하면 lib/timetable.ts의 HOLIDAYS에 다음 해 공휴일(대체공휴일 포함)을 더한다.
+test('공휴일 목록이 올해(11월부터는 내년)까지 있다', () => {
+  const [y, m] = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit' }).format(new Date()).split('-').map(Number);
+  assert.ok(HOLIDAY_LAST_YEAR >= (m >= 11 ? y + 1 : y), `HOLIDAYS가 ${HOLIDAY_LAST_YEAR}년까지만 있어요. ${m >= 11 ? y + 1 : y}년 공휴일을 더하세요`);
 });

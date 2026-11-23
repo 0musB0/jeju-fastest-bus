@@ -8,8 +8,9 @@ export const TRANSFER_MARGIN_MIN = 3; // 환승은 앞 버스 도착·뒤 버스
 export const MIN_PER_STOP = 1.5; // 시간표가 없을 때 정류장당 평균 소요(분). 실측 1.53분(2026-11-01 일요일 오전 3시간, 360·365·315·281번 2,138건)
 export const SLOW_M = 150; // 시간표 기준점 사이가 분당 이 거리(m)보다 느리면 이름을 잘못 맞춘 것으로 봄 (버스 평균 분당 300~400m)
 
-// 카카오 검색을 제주로 제한하는 사각형 (서경,남위,동경,북위)
-export const JEJU_RECT = '126.08,33.10,127.00,33.60';
+// 제주 범위: 카카오 검색을 제한하는 사각형(JEJU_RECT)과, 출발·도착·지도에서 고른 점이 제주 안인지 보는 inJeju(lib/direct.ts)가 같은 값을 쓴다
+export const JEJU = { minLng: 126.08, minLat: 33.10, maxLng: 127.0, maxLat: 33.60 };
+export const JEJU_RECT = `${JEJU.minLng},${JEJU.minLat},${JEJU.maxLng},${JEJU.maxLat}`; // 서경,남위,동경,북위
 export const HERE_STILL_M = 30; // 출발지가 "현재 위치"면 마지막으로 쓴 좌표에서 이 안에서만 움직였으면 그 좌표를 그대로 쓴다 (결과가 흔들리지 않게)
 export const HERE_ACC_M = 200; // "현재 위치" GPS 정확도(m)가 이보다 나쁘면 이전 좌표를 쓴다
 export const BOARDED_M = 150;// 타려던 버스가 지나갈 때 내 위치(GPS)가 승차 정류장에서 이 안이면 탄 것으로 보고 따라가기로 바꾼다
@@ -26,3 +27,6 @@ export const API_MAX_QUERY = 6000; // 쿼리 문자열 상한(글자). 정상 �
 export const PLAN_RATE_PER_MIN = 40; // IP당 /api/plan 분당 상한
 export const SEARCH_RATE_PER_MIN = 30; // IP당 /api/search 분당 상한
 export const LOC_TTL_MS = 15000; // 같은 노선의 버스 위치를 이 시간 안에는 다시 받지 않고 나눠 쓴다 (화면 갱신 20초보다 짧아서 첫 화면이 옛 위치일 일은 없다)
+export const REFRESH_MS = 20_000; // 화면이 실시간·시간표를 다시 계산하는 주기 (lib/guard.ts의 분당 상한은 이 주기를 기준으로 잡음)
+export const WALK_TREE_M = 3000; // 걷는 길을 따라 재는 최대 반경, 버스 없이 걸어가는 경로를 보여주는 최대 거리
+export const KAKAO_TIMEOUT_MS = 3000; // 카카오 장소 검색 응답 제한 시간

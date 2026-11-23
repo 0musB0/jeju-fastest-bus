@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
 import type { Pt, Ride } from '@/lib/odsay';
+import { inJeju } from '@/lib/direct';
 
 // 카카오 지도 (JavaScript 키, 브라우저용. 카카오 콘솔에 등록한 Web 주소에서만 동작)
 const KEY = process.env.NEXT_PUBLIC_KAKAO_JS_KEY ?? '';
@@ -174,7 +175,6 @@ export function RouteLine({ path }: { path: Pt[] }) {
 
 // 지도를 눌러 출발지·도착지 고르기. 누른 곳의 주소를 이름으로 쓴다 (카카오 지도 SDK 주소 변환, 없으면 "지도에서 고른 곳")
 const JEJU_CENTER = { lat: 33.38, lng: 126.55 };
-const inJeju = (p: Pt) => p.lat > 33.1 && p.lat < 33.6 && p.lng > 126.08 && p.lng < 127; // app/api/plan의 point()와 같은 범위
 export function PickMap({ onPick }: { onPick: (p: { name: string; address?: string; lat: number; lng: number }) => void }) {
   const box = useRef<HTMLDivElement>(null);
   const [spot, setSpot] = useState<{ name: string; address?: string; lat: number; lng: number } | null>(null);

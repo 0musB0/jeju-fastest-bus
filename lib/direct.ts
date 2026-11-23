@@ -1,4 +1,4 @@
-import { NEAR_STOP_M, WALK_DETOUR, WALK_M_PER_MIN, MIN_PER_STOP, TRANSFER_M, TRANSFER_PENALTY_MIN, SHORT_HOP_M, WALK_NET_MAX_M } from './config.ts';
+import { JEJU, NEAR_STOP_M, WALK_DETOUR, WALK_M_PER_MIN, MIN_PER_STOP, TRANSFER_M, TRANSFER_PENALTY_MIN, SHORT_HOP_M, WALK_NET_MAX_M } from './config.ts';
 import type { Walker } from './walk.ts';
 
 // 우리 데이터(정류장·노선 JSON)만으로 경로 후보를 찾는다: 직행 + 한 번 환승. ODsay 일일 한도와 상관없이 항상 돈다.
@@ -40,6 +40,7 @@ export function maskOffShape(routes: BusRoute[], shapes: Shapes, nameOf?: (id: s
   });
 }
 
+export const inJeju = (p: Pt) => p.lat >= JEJU.minLat && p.lat <= JEJU.maxLat && p.lng >= JEJU.minLng && p.lng <= JEJU.maxLng; // NaN은 false
 export function distM(a: Pt, b: Pt): number {
   const R = 6371000, rad = Math.PI / 180;
   const x = (b.lng - a.lng) * rad * Math.cos(((a.lat + b.lat) / 2) * rad);
