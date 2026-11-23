@@ -1,11 +1,12 @@
-import { headwayMin, parseBusLocation, minsAway, stopsAway, fallbackLoc, batchTimeout } from '@/lib/realtime';
+import { headwayMin, parseBusLocation, minsAway, stopsAway, fallbackLoc, batchTimeout, coalesced } from '@/lib/realtime';
+import { guardRequest } from '@/lib/guard';
 import { distM, findTrips, indexData, maskOffShape, legPath, roughRide, type Station, type BusRoute, type RideMin, type Shapes, type Trip } from '@/lib/direct';
 import shapeData from '@/data/shapes.json';
 import stationList from '@/data/stations.json';
 import routeList from '@/data/routes.json';
 import timetableData from '@/data/timetable.json';
 import { arrivals, firstAt, kstDay, kstMinutes, offsetAt, rideFactor, type Timetable } from '@/lib/timetable';
-import { MIN_PER_STOP, WALK_DETOUR, WALK_M_PER_MIN } from '@/lib/config';
+import { LOC_TTL_MS, MIN_PER_STOP, PLAN_RATE_PER_MIN, WALK_DETOUR, WALK_M_PER_MIN } from '@/lib/config';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { walkGraph, type Walker } from '@/lib/walk';
@@ -46,13 +47,15 @@ const point = (v: string | null) => {
 
 // 직전에 성공한 위치 (함수 인스턴스 메모리). 실패했을 때만 STALE_MS 안의 값을 대신 쓴다. 성공하면 늘 새 값이라 옛 위치가 먼저 나오지 않는다.
 const lastOk = new Map<string, { t: number; loc: Awaited<ReturnType<typeof fetchLocation>> }>();
-async function busLocation(r: string, timeoutMs: number, deadline: number) {
+// 같은 노선의 요청은 LOC_TTL_MS(15초) 동안 합친다: 사용자·탭이 여럿이어도 노선당 15초에 한 번만 busopen을 부른다 (캐시를 없앤 뒤 20초 갱신마다 노선당 최대 16번 부르던 것을 줄임, MUS2-152)
+const inflight = new Map<string, { t: number; p: Promise<Awaited<ReturnType<typeof fetchLocation>>> }>();
+const busLocation = (r: string, timeoutMs: number, deadline: number) => coalesced(inflight, r, Date.now(), LOC_TTL_MS, async () => {
   let loc = await fetchLocation(r, timeoutMs);
   // 실패하면 짧게 쉬고 1회 재시도 (남은 시간이 충분할 때만, 이 노선만)
   if (!loc.ok && deadline - Date.now() > 2500) { await new Promise((ok) => setTimeout(ok, 300)); loc = await fetchLocation(r, Math.min(timeoutMs, deadline - Date.now() - 100)); }
   if (loc.ok) lastOk.set(r, { t: Date.now(), loc });
   return loc;
-}
+}, (loc) => loc.ok);
 async function fetchLocation(r: string, timeoutMs: number) {
   try {
     const res = await fetch(`http://busopen.jeju.go.kr/OpenAPI/service/bis/BusLocation?route=${r}`, {
@@ -69,6 +72,8 @@ async function fetchLocation(r: string, timeoutMs: number) {
 }
 
 export async function GET(req: Request) {
+  const blocked = guardRequest(req, 'plan', PLAN_RATE_PER_MIN);
+  if (blocked) return blocked;
   const p = new URL(req.url).searchParams;
   // q = ODsay 경로의 첫 버스, later = 환승 버스 (환승 버스는 시간표만 쓰므로 실시간 조회는 안 함)
   const parse = (v: string | null) => (v ?? '').split(',').map((x) => x.split(':'))

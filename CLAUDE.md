@@ -34,13 +34,15 @@ app/guide/[slug]      안내 글 본문(요금·종류·타는 법) + 공항→�
 app/sitemap.ts, robots.ts  검색엔진용
 lib/guides.ts         안내 글 목록(GUIDES), airportRides(공항 → 목적지 직행 노선·소요·첫차·막차)
 app/globals.css       디자인(모래·현무암·귤색)
-app/api/search        카카오 키워드 검색 프록시(제주 rect 고정)
+app/api/search        카카오 키워드 검색 프록시(제주 rect 고정, 좌표 검증). route.test.ts = 이 라우트 테스트
 app/api/plan          서버 핵심. data/*.json을 import해 findTrips(우리 경로 후보) + 노선별 busopen BusLocation(실시간) + 시간표 도착 시각 + 지도 선(paths)을 돌려줌
 lib/config.ts         조절값 상수 전부
+lib/guard.ts          API 보호: Origin 검증·쿼리 길이 상한(414)·IP별 분당 상한(429, 인스턴스 메모리). /api/plan·/api/search 맨 앞에서 호출
+lib/storage.ts        localStorage·sessionStorage 값 검증(즐겨찾기·탭 저장·따라가기). 깨진 값은 없는 것으로
 lib/direct.ts         정류장·노선 인덱스, 거리·걷기, findTrips(직행·환승 2번), legPath
 lib/eta.ts            arrivalMin: 후보 1개의 도착 시각(순수 함수), kstClock 표시
 lib/follow.ts         따라가기 순수 함수: walking(누른 뒤 걸은 만큼), passed(버스 지나감 판정), riding(탄 버스 안·환승 정류장에서 남은 경로 다시 계산), shift, searchOrigin(검색 출발지: 탑승 뒤 내 위치, "현재 위치" 출발은 갱신 때마다 GPS 다시 읽기), pace(버스 속도 배율)
-lib/realtime.ts       BusLocation XML 파싱, 남은 정류장 수, applyRealtime(대기 반영), tripsToRoutes(우리 경로 → 화면용 Route)
+lib/realtime.ts       BusLocation XML 파싱(깨진 항목 버림), coalesced(같은 노선 요청 합치기), 남은 정류장 수, applyRealtime(대기 반영), tripsToRoutes(우리 경로 → 화면용 Route)
 lib/odsay.ts          ODsay 응답 파싱(JEB 접두어 제거), 요금 계산
 lib/timetable.ts      시간표 표 파싱·이름 맞추기·Entry 생성, arrivals/firstAt, kstDay(공휴일 목록)·kstMinutes
 lib/*.test.ts         같은 이름 파일의 테스트 (npm test)
@@ -96,9 +98,11 @@ scripts/accuracy.mjs  배포된 /api/plan으로 대기 예측 정확도 측정 (
 
 ## Vercel 설정
 
+- 보안 헤더는 `next.config.ts`: 프레임·base·object·form 제한은 적용 중, 스크립트·연결·이미지 출처 CSP는 Report-Only(카카오맵·애드센스를 배포 화면에서 확인한 뒤 `Content-Security-Policy`로 올린다, 2026-11-23).
+
 - 함수 지역은 서울로 고정한다: `vercel.json`에 `"regions": ["icn1"]`.
 - 실시간 조회는 2개씩 나눠 병렬로 보내고(제주 서버는 5개를 동시에 보내면 모두 3초를 넘김, 실측), 각 요청에 `AbortSignal.timeout`을 둔다(요청당 최대 6초, 전체 8.5초 안. 남은 시간이 4초보다 짧으면 새 배치를 보내지 않는다 (짧은 제한 시간은 3초대 응답을 TimeoutError로 실패시켰다, 2026-11-11). Vercel→busopen은 3초를 늘 넘겨 6회 모두 실패, 2026-11-11).
-- 실시간 응답(버스 위치)은 `fetch(url, { cache: 'no-store' })`로 캐시하지 않는다. `revalidate`는 만료된 값을 먼저 주므로 옛 위치가 첫 화면에 나온다(2026-11-11). 함수 메모리에는 직전 성공 위치만 두고, 조회가 실패했을 때만 60초 안의 값을 대신 쓴다(`fallbackLoc`, 화면에 "N초 전 값"). 성공하면 늘 새 값.
+- 실시간 응답(버스 위치)은 `fetch(url, { cache: 'no-store' })`로 캐시하지 않는다. `revalidate`는 만료된 값을 먼저 주므로 옛 위치가 첫 화면에 나온다(2026-11-11). 같은 노선 요청은 함수 메모리에서 15초(`LOC_TTL_MS`) 동안 합친다(`coalesced`: 진행 중이거나 15초 안에 성공한 결과를 나눠 씀, 실패는 남기지 않음. 화면 갱신 20초보다 짧아 한 사용자의 첫 화면이 옛 위치가 되진 않는다, MUS2-152). 함수 메모리에는 직전 성공 위치도 두고, 조회가 실패했을 때만 60초 안의 값을 대신 쓴다(`fallbackLoc`, 화면에 "N초 전 값"). 성공하면 늘 새 값.
 - Hobby 요금제는 비상업 용도 전용이다. 광고나 유료화를 하면 Pro로 옮긴다. 애드센스 코드는 들어 있지만 `NEXT_PUBLIC_ADSENSE_CLIENT`가 없으면 꺼져 있다(2026-11-01). 이 값을 넣기 전에 Pro 전환을 먼저 확인한다.
 - API 확인은 로컬이 아니라 배포된 환경에서 한다 (IP·지역 문제는 로컬에서 드러나지 않는다).
 

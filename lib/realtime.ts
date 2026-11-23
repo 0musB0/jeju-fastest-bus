@@ -14,7 +14,7 @@ export function parseBusLocation(xml: string): BusLocation {
   const stops = [...xml.matchAll(/<item>([\s\S]*?)<\/item>/g)].map(([, it]) => {
     const plate = field(it, 'plateNo');
     return { stationId: field(it, 'stationId') ?? '', ord: Number(field(it, 'stationOrd')), bus: !!plate && plate !== 'null' };
-  });
+  }).filter((x) => x.stationId && Number.isFinite(x.ord)); // 깨진 항목은 버린다 (NaN 순번이 남은 정류장 수 계산으로 번지지 않게)
   return { ok: true, stops };
 }
 
@@ -128,4 +128,15 @@ export function fallbackLoc(loc: BusLocation, prev: { t: number; loc: BusLocatio
 // 짧은 제한 시간으로 보내면 제주 서버의 3초대 응답이 TimeoutError로 실패했다 (3003-1, 2026-11-11).
 export function batchTimeout(leftMs: number, minMs = 4000, maxMs = 6000): number | null {
   return leftMs < minMs ? null : Math.min(maxMs, leftMs);
+}
+
+// 같은 키 요청을 합친다: 진행 중이거나 ttlMs 안에 시작한 요청의 결과를 나눠 쓴다. 성공(good)이 아닌 결과·예외는 남기지 않아 다음 호출이 다시 시도한다.
+// 단순화: 함수 인스턴스 메모리라 인스턴스끼리는 공유하지 않는다. 키는 검증된 노선 ID뿐이라 크기가 노선 수(~1,000)를 넘지 않는다.
+export function coalesced<T>(cache: Map<string, { t: number; p: Promise<T> }>, key: string, now: number, ttlMs: number, run: () => Promise<T>, good: (v: T) => boolean): Promise<T> {
+  const hit = cache.get(key);
+  if (hit && now - hit.t < ttlMs) return hit.p;
+  const p = run();
+  cache.set(key, { t: now, p });
+  p.then((v) => { if (!good(v) && cache.get(key)?.p === p) cache.delete(key); }, () => { if (cache.get(key)?.p === p) cache.delete(key); });
+  return p;
 }

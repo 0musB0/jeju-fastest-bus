@@ -20,3 +20,9 @@ export const SHORT_HOP_M = 1500; // 버스 세 대 경로에서 가운데 구간
 // 실측 2026-11-03(화) ridetime: 버스별 실제÷시간표의 중앙값 17시 1.10, 18시 1.05, 19시 1.03, 10시 ≈1.0. 1.03은 오차 안이라 뺌.
 // ponytail: 하루 측정값, 아침 출근길(7~9시)은 아직 안 잼. 더 재면 여기만 고친다
 export const RUSH_RIDE: Record<number, number> = { 17: 1.1, 18: 1.05 };
+
+// API 보호 (lib/guard.ts). 화면은 20초마다 /api/plan을 부르므로 분당 3번쯤 쓰고, 검색은 사람이 누를 때만 부른다.
+export const API_MAX_QUERY = 6000; // 쿼리 문자열 상한(글자). 정상 요청은 4000자 안쪽 (노선:정류장 쌍 ~30개씩)
+export const PLAN_RATE_PER_MIN = 40; // IP당 /api/plan 분당 상한
+export const SEARCH_RATE_PER_MIN = 30; // IP당 /api/search 분당 상한
+export const LOC_TTL_MS = 15000; // 같은 노선의 버스 위치를 이 시간 안에는 다시 받지 않고 나눠 쓴다 (화면 갱신 20초보다 짧아서 첫 화면이 옛 위치일 일은 없다)

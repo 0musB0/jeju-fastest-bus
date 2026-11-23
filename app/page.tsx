@@ -7,27 +7,19 @@ import { parseOdsay, type Pt, type Route } from '@/lib/odsay';
 import { applyRealtime, tripsToRoutes, sameRide, rideKeys, stopKeys, onOurRoutes, withOurWalks, type Headways, type PlanResults, type Schedules } from '@/lib/realtime';
 import { distM, type Trip } from '@/lib/direct';
 import { BOARDED_M } from '@/lib/config';
+import { parseFavs, parsePinned, parseTrip, type Pinned, type Place } from '@/lib/storage';
 import RouteMap, { PickMap } from './RouteMap';
 
-type Place = { name: string; address?: string; lat: number; lng: number };
 type Ranked = Followed;
 
 const ODSAY_KEY = process.env.NEXT_PUBLIC_ODSAY_KEY ?? '';
 // 크롬이 뒤에 둔 탭을 지웠다가 다시 열면 페이지가 새로 뜬다. 그때 출발·도착을 되살린다 (탭을 닫으면 사라짐).
 const SAVED = 'trip';
-const loadTrip = (): { from: Place | null; to: Place | null } | null => {
-  // "현재 위치"는 되살리지 않는다: 그새 움직였을 수 있으니 다시 묻는다
-  try { const t = JSON.parse(sessionStorage.getItem(SAVED) ?? 'null'); return t && { ...t, from: t.from?.name === '현재 위치' ? null : t.from }; } catch { return null; }
-};
+const loadTrip = () => { try { return parseTrip(sessionStorage.getItem(SAVED)); } catch { return null; } };
 // "이 경로로 갈게요"로 고른 경로는 크롬을 껐다 켜도 남도록 localStorage에 둔다. 도착 시각에서 30분이 지나면 버린다.
 const PINNED = 'pinned';
-type Pinned = { from: Place; to: Place; r: Ranked; t: number; held: boolean; k?: number; since?: number };
-const loadPinned = (): Pinned | null => {
-  try {
-    const p: Pinned | null = JSON.parse(localStorage.getItem(PINNED) ?? 'null');
-    return p?.r?.eta && Date.now() < p.t + (p.r.eta.min + 30) * 60000 ? p : null;
-  } catch { return null; }
-};
+// 값 검증(깨진 저장값은 없는 것으로)은 lib/storage.ts
+const loadPinned = (): Pinned | null => { try { return parsePinned(localStorage.getItem(PINNED), Date.now()); } catch { return null; } };
 // 도착 시각 계산에 실제로 쓴 버스의 노선 번호 (배차 간격 어림처럼 특정 버스가 없으면 null → 후보 번호 전부)
 function boardIdx(r: Ranked, j: number): number {
   const b = r.eta?.boards[j];
@@ -84,7 +76,7 @@ function PlacePicker({ label, value, onPick, allowHere, favorites }: { label: st
   const [q, setQ] = useState('');
   const [favs, setFavs] = useState<Place[]>([]);
   useEffect(() => {
-    if (favorites) try { setFavs(JSON.parse(localStorage.getItem(FAVS) ?? '[]')); } catch {}
+    if (favorites) try { setFavs(parseFavs(localStorage.getItem(FAVS))); } catch {}
   }, [favorites]);
   const saveFavs = (next: Place[]) => {
     setFavs(next);
@@ -295,6 +287,7 @@ export default function Home() {
           wt: refresh ? '' : [...new Set(odsay.map((o) => o.rides.at(-1)?.endStationId).filter(Boolean))].slice(0, 20).join(','), from: `${F.lat},${F.lng}`, to: `${T.lat},${T.lng}`,
           paths: refresh ? '' : [...new Set(odsay.slice(0, 6).flatMap((o) => o.rides.map(pathKey)))].join(','), ...(refresh ? { lite: '1' } : {}) });
         const r = await fetch(`/api/plan?${q}`).then((r) => r.json());
+        if (r.error) throw new Error(r.error); // 403·414·429 등 서버가 막은 응답
         results = r.results ?? {};
         staleSec = r.stale ?? {};
         headways = r.headways ?? {};
