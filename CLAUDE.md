@@ -45,6 +45,8 @@ lib/config.ts         조절값 상수 전부
 lib/data.ts           /api/plan용 data/*.json 지연 로딩(getPlanData: 정류장·노선·시간표·모양 약 3.8MB, getWalker: 걷는 길 7.7MB). 막힌 요청·지도 선만 받는 요청은 안 읽음
 lib/guard.ts          API 보호: Origin 검증·쿼리 길이 상한(414)·IP별 분당 상한(429, 인스턴스 메모리). /api/plan·/api/search 맨 앞에서 호출
 lib/storage.ts        localStorage·sessionStorage 값 검증(즐겨찾기·탭 저장·따라가기). 깨진 값은 없는 것으로
+lib/walk.ts           걷는 길 그래프(data/walk.json, OpenStreetMap) 다익스트라: 출발·도착 걷기 시간·선
+next.config.ts        보안 헤더(CSP Report-Only 포함), /api/plan 배포에 data/*.json 포함
 lib/direct.ts         정류장·노선 인덱스, 거리·걷기, findTrips(직행·환승 2번), legPath
 lib/eta.ts            arrivalMin: 후보 1개의 도착 시각(순수 함수), kstClock 표시
 lib/follow.ts         따라가기 순수 함수: walking(누른 뒤 걸은 만큼), passed(버스 지나감 판정), riding(탄 버스 안·환승 정류장에서 남은 경로 다시 계산), shift, searchOrigin(검색 출발지: 탑승 뒤 내 위치, "현재 위치" 출발은 갱신 때마다 GPS 다시 읽기), pace(버스 속도 배율)
@@ -58,8 +60,10 @@ data/stations.json    정류장 {id,name,lat,lng,dir}      ← scripts/fetch-dat
 data/routes.json      노선 {id,no,to,stops[]}          ← scripts/fetch-data.mjs
 data/schedules.json   사이트 시간표 원본 표(탭 이름 label에 평일/휴일)             ← scripts/fetch-schedules.mjs (schedules.yml, 매달 2일)
 data/timetable.json   노선ID → {p,t,m,n} 정류장 순번 기준 ← scripts/build-timetable.mjs
+data/walk.json        OSM 걷는 길(점·간선)           ← scripts/fetch-walk.mjs (walk.yml, 석 달마다)
 data/shapes.json      노선ID → {p 좌표, s 정류장 선분}   ← scripts/fetch-shapes.mjs
 scripts/check-data.mjs  데이터 워크플로의 커밋 전 검사: 최소 건수·직전 커밋 대비 20% 넘는 감소면 실패 (check-data.test.mjs)
+scripts/ridetime.mjs   시간대별 실제÷시간표 탑승 시간 측정 (config RUSH_RIDE 근거)
 scripts/accuracy.mjs  배포된 /api/plan으로 대기 예측 정확도 측정 (accuracy.yml, 수동)
 ```
 

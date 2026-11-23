@@ -1,6 +1,5 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
-import { arrivalMin } from '@/lib/eta';
 import { kstMinutes } from '@/lib/timetable';
 import { pace, passed, riding, searchOrigin, shift, walking, type Followed, type Frozen } from '@/lib/follow';
 import { parseOdsay, type Pt, type Route } from '@/lib/odsay';
@@ -22,8 +21,6 @@ export function usePlanner({ from, to, setFrom, setTo, meRef }: { from: Place | 
   const [at, setAt] = useState<Date | null>(null);
   const [msg, setMsg] = useState('');
   const [rtWhy, setRtWhy] = useState(''); // 실시간을 못 받은 이유 문구 (빈 문자열이면 정상)
-  const rtDown = !!rtWhy; // 실시간 서버가 응답하지 않아 시간표로만 계산했는지
-  const [opened, setOpened] = useState<string[]>([]); // 버스 번호를 다 펼친 경로
   const [selKey, setSelKey] = useState(''); // 고른 경로: 20초 갱신으로 순서가 바뀌어도 같은 경로를 따라간다
   const [held, setHeld] = useState(false); // 고른 경로가 갱신 결과에서 빠져 화면을 고정한 상태
   const [walkMin, setWalkMin] = useState<number | null>(null); // 버스 없이 걸어가는 시간(3km 안)
@@ -116,7 +113,7 @@ export function usePlanner({ from, to, setFrom, setTo, meRef }: { from: Place | 
           wt: refresh ? '' : [...new Set(odsay.map((o) => o.rides.at(-1)?.endStationId).filter(Boolean))].slice(0, 20).join(','), from: `${F.lat},${F.lng}`, to: `${T.lat},${T.lng}`,
           paths: refresh ? '' : [...new Set(odsay.slice(0, 6).flatMap((o) => o.rides.map(pathKey)))].join(','), ...(refresh ? { lite: '1' } : {}) });
         const r = await fetch(`/api/plan?${q}`).then((r) => r.json());
-        if (r.error) throw new Error(r.error); // 403·414·429 등 서버가 막은 응답
+        if (r.error) throw Object.assign(new Error(r.error), { serverMsg: String(r.error) }); // 403·414·429 등 서버가 막은 응답: 이유를 화면에 보여준다
         results = r.results ?? {};
         staleSec = r.stale ?? {};
         headways = r.headways ?? {};
@@ -146,10 +143,10 @@ export function usePlanner({ from, to, setFrom, setTo, meRef }: { from: Place | 
         }
         // ODsay 경로의 지도 선을 노선 모양(도로)으로 바꾼다
         for (const o of odsay) for (const x of o.rides) if (r.paths?.[pathKey(x)]?.length > 1) x.path = r.paths[pathKey(x)];
-      } catch {
+      } catch (e) {
         if (refresh) return; // 갱신 중 한 번 끊기면 이전 결과를 그대로 둔다
         setWalkMin(null);
-        setRtWhy('실시간 서버에 연결하지 못해 시간표로 계산했어요.');
+        setRtWhy((e as { serverMsg?: string })?.serverMsg ?? '실시간 서버에 연결하지 못해 시간표로 계산했어요.');
         /* 첫 검색: ODsay 경로만, 대기는 추정 불가로 표시 */
       }
       if (stale()) return;

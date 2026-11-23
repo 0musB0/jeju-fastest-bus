@@ -186,7 +186,8 @@ test('공항을 안 지나는 변형(182-5)도 같은 운행이면 공항 거치
 
 // 공휴일 목록은 손으로 적어서(공공 API 불가) 해가 바뀌면 낡는다. 올해 목록이 없거나, 11월부터는 다음 해 목록이 없으면 여기서 실패한다.
 // 실패하면 lib/timetable.ts의 HOLIDAYS에 다음 해 공휴일(대체공휴일 포함)을 더한다.
-test('공휴일 목록이 올해(11월부터는 내년)까지 있다', () => {
+// 데이터 갱신 워크플로의 테스트 관문(DATA_GATE=1)에서는 건너뛴다: 공휴일을 안 넣었다고 정류장·시간표 갱신 커밋까지 막히면 안 된다.
+test('공휴일 목록이 올해(11월부터는 내년)까지 있다', { skip: !!process.env.DATA_GATE }, () => {
   const [y, m] = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit' }).format(new Date()).split('-').map(Number);
   assert.ok(HOLIDAY_LAST_YEAR >= (m >= 11 ? y + 1 : y), `HOLIDAYS가 ${HOLIDAY_LAST_YEAR}년까지만 있어요. ${m >= 11 ? y + 1 : y}년 공휴일을 더하세요`);
 });

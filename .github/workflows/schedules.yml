@@ -38,6 +38,8 @@ jobs:
         run: node scripts/check-data.mjs
       - name: 테스트 통과 확인 (새 데이터로 경로 계산이 도는지)
         run: npm ci && npm test
+        env:
+          DATA_GATE: '1' # 공휴일 낡음 테스트는 건너뜀
       - name: 바뀐 데이터 커밋
         run: |
           git config user.name "github-actions[bot]"
