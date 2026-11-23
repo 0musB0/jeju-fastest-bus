@@ -1,35 +1,12 @@
-import { headwayMin, parseBusLocation, minsAway, stopsAway, fallbackLoc, batchTimeout, coalesced } from '@/lib/realtime';
-import { guardRequest } from '@/lib/guard';
-import { distM, findTrips, indexData, maskOffShape, legPath, roughRide, type Station, type BusRoute, type RideMin, type Shapes, type Trip } from '@/lib/direct';
-import shapeData from '@/data/shapes.json';
-import stationList from '@/data/stations.json';
-import routeList from '@/data/routes.json';
-import timetableData from '@/data/timetable.json';
-import { arrivals, firstAt, kstDay, kstMinutes, offsetAt, rideFactor, type Timetable } from '@/lib/timetable';
-import { LOC_TTL_MS, MIN_PER_STOP, PLAN_RATE_PER_MIN, WALK_DETOUR, WALK_M_PER_MIN } from '@/lib/config';
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
-import { walkGraph, type Walker } from '@/lib/walk';
+import { headwayMin, parseBusLocation, minsAway, stopsAway, fallbackLoc, batchTimeout, coalesced } from '../../../lib/realtime.ts';
+import { guardRequest } from '../../../lib/guard.ts';
+import { getPlanData, getWalker } from '../../../lib/data.ts';
+import { distM, findTrips, legPath, type Trip } from '../../../lib/direct.ts';
+import { arrivals, firstAt, kstDay, kstMinutes, offsetAt, rideFactor } from '../../../lib/timetable.ts';
+import { LOC_TTL_MS, PLAN_RATE_PER_MIN, WALK_DETOUR, WALK_M_PER_MIN } from '../../../lib/config.ts';
 
 // 실시간: 노선별 버스 위치 → 우리 정류장까지 남은 정류장 수. 우리 데이터로 경로 후보(직행·환승 1번)도 여기서 찾는다.
 // 그 노선의 정류장 목록에 있는 정류장만 받고, 고정된 BusLocation 주소만 부르므로 아무 데나 부르는 프록시가 되지 않는다.
-const stations = stationList as Station[];
-const stationName = new Map(stations.map((s) => [s.id, s.name])), stationById = new Map(stations.map((s) => [s.id, s]));
-const routes = maskOffShape(routeList as BusRoute[], shapeData as Shapes, (id) => stationName.get(id), (id) => stationById.get(id));
-const routeById = new Map(routes.map((r) => [r.id, r]));
-const timetable = timetableData as Timetable;
-const index = indexData(stations, routes, shapeData as Shapes);
-// 시간표는 노선 ID + 정류장 순번으로 저장돼 있다. 만들 때와 정류장 수가 다르면(노선만 갱신되고 시간표 갱신 실패) 순번이 어긋나므로 쓰지 않는다.
-const tableOf = (r: BusRoute | undefined) => { const e = r && timetable[r.id]; return e && e.n === r.stops.length ? e : undefined; };
-// 탑승 시간: 시간표의 정류장 간 소요, 없으면 정류장 수 × 평균 소요(정류장이 드문 노선은 거리로)
-const rideMin: RideMin = (r, i, j) => {
-  const e = tableOf(r);
-  const m = e ? offsetAt(e.p, j) - offsetAt(e.p, i) : 0;
-  return Math.round(m >= 1 ? m : roughRide(index, r, i, j)); // 1분 미만은 시간표 보간 오차로 보고 어림값
-};
-// 걷는 길(OpenStreetMap). 없으면 직선 × 배율로 계산한다.
-let walker: Walker | undefined;
-try { walker = walkGraph(JSON.parse(readFileSync(join(process.cwd(), 'data', 'walk.json'), 'utf8'))); } catch { walker = undefined; }
 const ID = /^\d{9}$/;
 // 실시간 조회 노선 수. 10개일 때 첫 구간 가지 노선만으로 다 차서 환승 구간은 늘 시간표였다 (공항→중문 39개 후보, 2026-11-03)
 const MAX_ROUTES = 16;
@@ -74,6 +51,7 @@ async function fetchLocation(r: string, timeoutMs: number) {
 export async function GET(req: Request) {
   const blocked = guardRequest(req, 'plan', PLAN_RATE_PER_MIN);
   if (blocked) return blocked;
+  const { stationName, stationById, routeById, index, tableOf, rideMin } = getPlanData(); // 12MB 데이터는 막힌 요청이 아닌 여기서 처음 읽는다
   const p = new URL(req.url).searchParams;
   // q = ODsay 경로의 첫 버스, later = 환승 버스 (환승 버스는 시간표만 쓰므로 실시간 조회는 안 함)
   const parse = (v: string | null) => (v ?? '').split(',').map((x) => x.split(':'))
@@ -81,6 +59,7 @@ export async function GET(req: Request) {
   // pin = 화면에서 따라가는 경로의 구간들: 실시간 칸에 가장 먼저 넣는다 (타고 가는 중에도 환승 버스를 실시간으로)
   const pairs = parse(p.get('q')), laterPairs = parse(p.get('later')), pinPairs = parse(p.get('pin'));
   const from = point(p.get('from')), to = point(p.get('to'));
+  const walker = from || to ? getWalker() : undefined; // 걷는 길 7.7MB: 출발·도착 좌표가 있는 요청에서만 읽는다 (지도 선만 받는 요청은 안 읽음)
   // 평일 퇴근길엔 시간표 소요보다 오래 걸린다 (실측 배율, lib/config.ts RUSH_RIDE). 실시간 대기의 정류장당 소요도 여기서 나와 같이 늘어난다
   const rf = rideFactor(new Date());
   const trips = from && to ? findTrips(from, to, index, rf === 1 ? rideMin : (r, i, j) => Math.round(rideMin(r, i, j) * rf), 20, walker) : [];

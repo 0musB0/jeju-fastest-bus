@@ -35,8 +35,9 @@ app/sitemap.ts, robots.ts  검색엔진용
 lib/guides.ts         안내 글 목록(GUIDES), airportRides(공항 → 목적지 직행 노선·소요·첫차·막차)
 app/globals.css       디자인(모래·현무암·귤색)
 app/api/search        카카오 키워드 검색 프록시(제주 rect 고정, 좌표 검증). route.test.ts = 이 라우트 테스트
-app/api/plan          서버 핵심. data/*.json을 import해 findTrips(우리 경로 후보) + 노선별 busopen BusLocation(실시간) + 시간표 도착 시각 + 지도 선(paths)을 돌려줌
+app/api/plan          서버 핵심. lib/data.ts로 data/*.json을 처음 필요할 때 읽어 findTrips(우리 경로 후보) + 노선별 busopen BusLocation(실시간) + 시간표 도착 시각 + 지도 선(paths)을 돌려줌. route.test.ts = 이 라우트 테스트(busopen은 가짜 응답)
 lib/config.ts         조절값 상수 전부
+lib/data.ts           /api/plan용 data/*.json 지연 로딩(getPlanData: 정류장·노선·시간표·모양 약 3.8MB, getWalker: 걷는 길 7.7MB). 막힌 요청·지도 선만 받는 요청은 안 읽음
 lib/guard.ts          API 보호: Origin 검증·쿼리 길이 상한(414)·IP별 분당 상한(429, 인스턴스 메모리). /api/plan·/api/search 맨 앞에서 호출
 lib/storage.ts        localStorage·sessionStorage 값 검증(즐겨찾기·탭 저장·따라가기). 깨진 값은 없는 것으로
 lib/direct.ts         정류장·노선 인덱스, 거리·걷기, findTrips(직행·환승 2번), legPath
@@ -51,6 +52,7 @@ data/routes.json      노선 {id,no,to,stops[]}          ← scripts/fetch-data.
 data/schedules.json   사이트 시간표 원본 표(탭 이름 label에 평일/휴일)             ← scripts/fetch-schedules.mjs (schedules.yml, 매달 2일)
 data/timetable.json   노선ID → {p,t,m,n} 정류장 순번 기준 ← scripts/build-timetable.mjs
 data/shapes.json      노선ID → {p 좌표, s 정류장 선분}   ← scripts/fetch-shapes.mjs
+scripts/check-data.mjs  데이터 워크플로의 커밋 전 검사: 최소 건수·직전 커밋 대비 20% 넘는 감소면 실패 (check-data.test.mjs)
 scripts/accuracy.mjs  배포된 /api/plan으로 대기 예측 정확도 측정 (accuracy.yml, 수동)
 ```
 

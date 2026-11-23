@@ -10,9 +10,13 @@ on:
         default: false
 permissions:
   contents: write
+concurrency:
+  group: data-commit
+  cancel-in-progress: false
 jobs:
   fetch:
     runs-on: ubuntu-latest
+    timeout-minutes: 60 # 응답 없는 서버를 무한정 기다리지 않게
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -30,6 +34,10 @@ jobs:
       - run: node --experimental-strip-types scripts/build-timetable.mjs
         if: ${{ !inputs.shapes_only }}
       - run: node scripts/fetch-shapes.mjs
+      - name: 데이터 건수 확인 (빈 데이터·급감이면 여기서 실패해 커밋하지 않음)
+        run: node scripts/check-data.mjs
+      - name: 테스트 통과 확인 (새 데이터로 경로 계산이 도는지)
+        run: npm ci && npm test
       - name: 바뀐 데이터 커밋
         run: |
           git config user.name "github-actions[bot]"

@@ -17,8 +17,8 @@ const reportOnly = [
 ].join('; ');
 
 const config: NextConfig = {
-  // 걷는 길 데이터는 크기가 커서 import하지 않고 실행 중에 읽는다. 배포 묶음에 넣으라고 알려준다.
-  outputFileTracingIncludes: { '/api/plan': ['./data/walk.json'] },
+  // /api/plan은 data/*.json을 import하지 않고 처음 필요할 때 파일로 읽는다(lib/data.ts). 배포 묶음에 넣으라고 알려준다.
+  outputFileTracingIncludes: { '/api/plan': ['./data/stations.json', './data/routes.json', './data/shapes.json', './data/timetable.json', './data/walk.json'] },
   headers: async () => [{
     source: '/:path*',
     headers: [
