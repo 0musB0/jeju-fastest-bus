@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
 import type { Pt, Ride } from '@/lib/odsay';
+import { inJeju } from '@/lib/direct';
 
 // 카카오 지도 (JavaScript 키, 브라우저용. 카카오 콘솔에 등록한 Web 주소에서만 동작)
 const KEY = process.env.NEXT_PUBLIC_KAKAO_JS_KEY ?? '';
@@ -8,15 +9,36 @@ const KEY = process.env.NEXT_PUBLIC_KAKAO_JS_KEY ?? '';
 type Kakao = any;
 let sdk: Promise<Kakao> | null = null;
 
+// SDK 한 번 받기: 10초 안에 안 오면 실패. 실패한 script 태그는 지운다 (남겨 두면 같은 주소를 다시 못 받는 브라우저가 있다)
+const loadOnce = () => new Promise<Kakao>((resolve, reject) => {
+  const s = document.createElement('script');
+  const fail = (why: string) => { clearTimeout(timer); s.remove(); reject(new Error(why)); };
+  const timer = setTimeout(() => fail('시간 초과'), 10_000);
+  s.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${KEY}&libraries=services&autoload=false`;
+  s.onload = () => {
+    try { (window as Kakao).kakao.maps.load(() => { clearTimeout(timer); resolve((window as Kakao).kakao); }); } catch { fail('초기화 실패'); }
+  };
+  s.onerror = () => fail('받기 실패');
+  document.head.appendChild(s);
+});
+
+// 실패하면 1초·2초 쉬고 두 번 더 시도한다 (모바일 망이 잠깐 끊긴 경우). 끝내 실패하면 다음 호출이 처음부터 다시 시도한다.
 function loadSdk(): Promise<Kakao> {
-  sdk ??= new Promise((resolve, reject) => {
-    const s = document.createElement('script');
-    s.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${KEY}&libraries=services&autoload=false`;
-    s.onload = () => (window as Kakao).kakao.maps.load(() => resolve((window as Kakao).kakao));
-    s.onerror = () => { sdk = null; reject(new Error('지도를 불러오지 못했어요')); };
-    document.head.appendChild(s);
-  });
+  sdk ??= (async () => {
+    for (let i = 0; ; i++) {
+      try { return await loadOnce(); } catch (e) {
+        if (i >= 2) { sdk = null; throw new Error(MAP_FAIL); }
+        await new Promise((ok) => setTimeout(ok, 1000 * (i + 1)));
+      }
+    }
+  })();
   return sdk;
+}
+const MAP_FAIL = '지도를 불러오지 못했어요. 인터넷 연결이나 광고 차단 설정을 확인해 주세요.';
+
+// 지도 오류 문구 + 다시 시도 (누르면 SDK부터 다시 받는다)
+function MapError({ msg, retry }: { msg: string; retry?: () => void }) {
+  return <p className="warn">{msg}{msg === MAP_FAIL && retry && <> <button type="button" onClick={retry}>다시 시도</button></>}</p>;
 }
 
 type Mark = { pt: Pt; label: string; kind: 'end' | 'stop' };
@@ -46,6 +68,7 @@ export default function RouteMap({ from, to, rides, walkPath, bus, me, heading }
   const drawn = useRef<Kakao[]>([]);
   const fitted = useRef(''); // 지도 범위를 맞춘 경로. 20초 갱신은 같은 경로라 사용자가 확대·이동한 화면을 그대로 둔다
   const [err, setErr] = useState('');
+  const [tries, setTries] = useState(0); // '다시 시도'를 누른 횟수 (지도 그리기 효과를 다시 돌린다)
   const [ready, setReady] = useState(false); // 지도가 만들어진 뒤에 움직이는 표시를 그림
 
   useEffect(() => {
@@ -74,7 +97,7 @@ export default function RouteMap({ from, to, rides, walkPath, bus, me, heading }
       setReady(true);
     }).catch((e) => setErr(e.message));
     return () => { alive = false; };
-  }, [from, to, rides]);
+  }, [from, to, rides, tries]);
 
   // 움직이는 표시(탄 버스, 내 위치)는 따로: 20초·GPS마다 지도 범위를 다시 맞추면 사용자가 옮긴 화면이 튄다
   // 표시는 한 번 만들고 자리·방향만 바꾼다. 갱신마다 지우고 새로 만들면 아이콘이 깜박인다 (2026-11-03)
@@ -110,13 +133,15 @@ export default function RouteMap({ from, to, rides, walkPath, bus, me, heading }
   }, [ready, bus?.lat, bus?.lng, me?.lat, me?.lng, heading]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!KEY) return null;
-  return err ? <p className="warn">{err}</p> : <div ref={box} className="map" role="img" aria-label="경로 지도" />;
+  const retry = () => { map.current = null; drawn.current = []; fitted.current = ''; setReady(false); setErr(''); setTries((n) => n + 1); };
+  return err ? <MapError msg={err} retry={retry} /> : <div ref={box} className="map" role="img" aria-label="경로 지도" />;
 }
 
 // 노선 한 개의 선(노선 페이지). 접힌 <details> 안에 있으면 펼칠 때 그린다 (숨긴 상자에는 지도를 못 그림)
 export function RouteLine({ path }: { path: Pt[] }) {
   const box = useRef<HTMLDivElement>(null);
   const [err, setErr] = useState('');
+  const [tries, setTries] = useState(0);
 
   useEffect(() => {
     if (!KEY || !box.current || path.length < 2) return;
@@ -142,19 +167,19 @@ export function RouteLine({ path }: { path: Pt[] }) {
     draw();
     holder?.addEventListener('toggle', draw);
     return () => holder?.removeEventListener('toggle', draw);
-  }, [path]);
+  }, [path, tries]);
 
   if (!KEY || path.length < 2) return null;
-  return err ? <p className="warn">{err}</p> : <div ref={box} className="map" role="img" aria-label="노선 지도" />;
+  return err ? <MapError msg={err} retry={() => { setErr(''); setTries((n) => n + 1); }} /> : <div ref={box} className="map" role="img" aria-label="노선 지도" />;
 }
 
 // 지도를 눌러 출발지·도착지 고르기. 누른 곳의 주소를 이름으로 쓴다 (카카오 지도 SDK 주소 변환, 없으면 "지도에서 고른 곳")
 const JEJU_CENTER = { lat: 33.38, lng: 126.55 };
-const inJeju = (p: Pt) => p.lat > 33.1 && p.lat < 33.6 && p.lng > 126.08 && p.lng < 127; // app/api/plan의 point()와 같은 범위
 export function PickMap({ onPick }: { onPick: (p: { name: string; address?: string; lat: number; lng: number }) => void }) {
   const box = useRef<HTMLDivElement>(null);
   const [spot, setSpot] = useState<{ name: string; address?: string; lat: number; lng: number } | null>(null);
   const [err, setErr] = useState('');
+  const [tries, setTries] = useState(0);
   const me = useRef<Pt | null>(null); // 내 위치 (GPS, 지도에 파란 점)
   const pickRef = useRef<((p: Pt, pan?: boolean) => void) | null>(null);
 
@@ -198,7 +223,7 @@ export function PickMap({ onPick }: { onPick: (p: { name: string; address?: stri
       }, () => {}, { enableHighAccuracy: true, timeout: 20_000, maximumAge: 10_000 });
     }).catch((e) => setErr(e.message));
     return () => { alive = false; if (watch !== undefined) navigator.geolocation.clearWatch(watch); };
-  }, []);
+  }, [tries]);
 
   // "내 위치로": 지도를 내 위치로 옮기고 그곳을 고른다
   const toMe = () => {
@@ -225,7 +250,7 @@ export function PickMap({ onPick }: { onPick: (p: { name: string; address?: stri
         <span className="muted">{spot ? spot.name : '지도를 눌러 감귤을 꽂아 보세요'}</span>
         <button className="primary" disabled={!spot} onClick={() => spot && onPick(spot)}>이 위치로</button>
       </div>
-      {err && <p className="warn">{err}</p>}
+      {err && <MapError msg={err} retry={() => { setErr(''); setTries((n) => n + 1); }} />}
     </div>
   );
 }

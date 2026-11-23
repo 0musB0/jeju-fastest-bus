@@ -29,8 +29,10 @@ export function routeFare(legs: (number | null)[], odsayFare: number): number {
 
 // ODsay가 2026-10-31부터 제주 ID 앞에 "JEB"를 붙여 준다 (JEB405579101). 숫자만 남긴다.
 const bisId = (v?: string | number) => String(v ?? '').replace(/^\D+/, '');
-const pt = (x?: number | string, y?: number | string) => (x && y ? { lat: Number(y), lng: Number(x) } : undefined);
-const walkMin = (s: Sub) => s.sectionTime || Math.round((s.distance ?? 0) / WALK_M_PER_MIN);
+// 외부 응답 검증: 숫자가 아니면(문자열·빈 값) 기본값. NaN이 도착 시각 계산·정렬로 번지지 않게 한다.
+const num = (v: unknown, d = 0) => (v === null || v === '' || v === undefined || !Number.isFinite(Number(v)) ? d : Number(v));
+const pt = (x?: number | string, y?: number | string) => (Number.isFinite(Number(x)) && Number.isFinite(Number(y)) && x && y ? { lat: Number(y), lng: Number(x) } : undefined);
+const walkMin = (s: Sub) => num(s.sectionTime) || Math.round(num(s.distance) / WALK_M_PER_MIN);
 
 // ODsay 대중교통 길찾기 응답 → 후보. 응답 모양이 다르면 이유를 담아 돌려준다.
 export function parseOdsay(body: unknown): Parsed {
@@ -54,17 +56,17 @@ export function parseOdsay(body: unknown): Parsed {
     for (const s of subs) {
       if (s.trafficType === 3) walk += walkMin(s);
       else if (s.trafficType === 2) {
-        legs.push({ walkBeforeMin: walk, rideMin: s.sectionTime ?? 0 });
+        legs.push({ walkBeforeMin: walk, rideMin: num(s.sectionTime) });
         const lanes = s.lane ?? [];
-        rides.push({ busNos: lanes.map((l) => l.busNo ?? '?'), routeIds: lanes.map((l) => bisId(l.busLocalBlID)), stationId: bisId(s.startLocalStationID), endStationId: bisId(s.endLocalStationID), from: s.startName ?? '', to: s.endName ?? '', stops: s.stationCount ?? 0, fromPt: pt(s.startX, s.startY), toPt: pt(s.endX, s.endY), path: s.passStopList?.stations?.flatMap((st) => pt(st.x, st.y) ?? []) });
+        rides.push({ busNos: lanes.map((l) => l.busNo ?? '?'), routeIds: lanes.map((l) => bisId(l.busLocalBlID)), stationId: bisId(s.startLocalStationID), endStationId: bisId(s.endLocalStationID), from: s.startName ?? '', to: s.endName ?? '', stops: num(s.stationCount), fromPt: pt(s.startX, s.startY), toPt: pt(s.endX, s.endY), path: s.passStopList?.stations?.flatMap((st) => pt(st.x, st.y) ?? []) });
         // 같은 구간을 여러 노선이 다니면 요금을 아는 노선 중 비싼 쪽 (모르는 노선만 있으면 null)
-        const known = lanes.flatMap((l) => legFare(l.busNo ?? '', s.distance ?? 0) ?? []);
+        const known = lanes.flatMap((l) => legFare(l.busNo ?? '', num(s.distance)) ?? []);
         fares.push(known.length ? Math.max(...known) : null);
         walk = 0;
       }
     }
     if (!legs.length) continue;
-    routes.push({ candidate: { legs, walkAfterMin: walk }, rides, fare: routeFare(fares, p.info?.payment ?? 0), odsayMin: p.info?.totalTime ?? 0 });
+    routes.push({ candidate: { legs, walkAfterMin: walk }, rides, fare: routeFare(fares, num(p.info?.payment)), odsayMin: num(p.info?.totalTime) });
   }
   return routes.length ? { ok: true, routes } : { ok: false, reason: '경로 없음' };
 }

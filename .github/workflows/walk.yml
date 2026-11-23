@@ -8,12 +8,19 @@ permissions:
 jobs:
   fetch:
     runs-on: ubuntu-latest
+    timeout-minutes: 45 # 응답 없는 서버를 무한정 기다리지 않게
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: node scripts/fetch-walk.mjs
+      - name: 데이터 건수 확인 (빈 데이터·급감이면 여기서 실패해 커밋하지 않음)
+        run: node scripts/check-data.mjs
+      - name: 테스트 통과 확인 (새 데이터로 경로 계산이 도는지)
+        run: npm ci && npm test
+        env:
+          DATA_GATE: '1' # 공휴일 낡음 테스트는 건너뜀
       - name: 바뀐 데이터 커밋
         run: |
           git config user.name "github-actions[bot]"

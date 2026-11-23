@@ -42,3 +42,14 @@ test('ODsay ID 앞의 JEB는 떼고 제주 BIS ID로', () => {
   assert.equal(r.routes[0].rides[0].stationId, '405000520');
   assert.deepEqual(r.routes[0].rides[0].routeIds, ['405579101']);
 });
+
+test('숫자가 아닌 값(문자열·빈 값)이 와도 NaN이 남지 않는다', () => {
+  const r = parseOdsay({ result: { path: [{ info: { payment: 'x', totalTime: '??' }, subPath: [
+    { trafficType: 3, sectionTime: 'abc', distance: null },
+    { trafficType: 2, sectionTime: '', stationCount: 'many', startX: 'zz', startY: '33.4', startLocalStationID: 'JEB405000520', lane: [{ busNo: '791', busLocalBlID: 'JEB405579101' }] },
+  ] }] } });
+  assert.ok(r.ok);
+  const x = r.routes[0];
+  assert.ok([x.odsayMin, x.fare, x.candidate.legs[0].rideMin, x.candidate.legs[0].walkBeforeMin, x.rides[0].stops].every(Number.isFinite));
+  assert.equal(x.rides[0].fromPt, undefined);
+});

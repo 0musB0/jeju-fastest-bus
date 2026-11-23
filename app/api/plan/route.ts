@@ -1,35 +1,13 @@
-import { headwayMin, parseBusLocation, minsAway, stopsAway, fallbackLoc, batchTimeout } from '@/lib/realtime';
-import { distM, findTrips, indexData, maskOffShape, legPath, roughRide, type Station, type BusRoute, type RideMin, type Shapes, type Trip } from '@/lib/direct';
-import shapeData from '@/data/shapes.json';
-import stationList from '@/data/stations.json';
-import routeList from '@/data/routes.json';
-import timetableData from '@/data/timetable.json';
-import { arrivals, firstAt, kstDay, kstMinutes, offsetAt, rideFactor, type Timetable } from '@/lib/timetable';
-import { MIN_PER_STOP, WALK_DETOUR, WALK_M_PER_MIN } from '@/lib/config';
-import { terminalEstimateMin } from '@/lib/eta';
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
-import { walkGraph, type Walker } from '@/lib/walk';
+import { headwayMin, parseBusLocation, minsAway, stopsAway, fallbackLoc, batchTimeout, coalesced } from '../../../lib/realtime.ts';
+import { guardRequest } from '../../../lib/guard.ts';
+import { getPlanData, getWalker } from '../../../lib/data.ts';
+import { distM, findTrips, inJeju, legPath, type Trip } from '../../../lib/direct.ts';
+import { terminalEstimateMin } from '../../../lib/eta.ts';
+import { arrivals, firstAt, kstDay, kstMinutes, offsetAt, rideFactor } from '../../../lib/timetable.ts';
+import { LOC_TTL_MS, PLAN_RATE_PER_MIN, WALK_DETOUR, WALK_M_PER_MIN, WALK_TREE_M } from '../../../lib/config.ts';
 
 // 실시간: 노선별 버스 위치 → 우리 정류장까지 남은 정류장 수. 우리 데이터로 경로 후보(직행·환승 1번)도 여기서 찾는다.
 // 그 노선의 정류장 목록에 있는 정류장만 받고, 고정된 BusLocation 주소만 부르므로 아무 데나 부르는 프록시가 되지 않는다.
-const stations = stationList as Station[];
-const stationName = new Map(stations.map((s) => [s.id, s.name])), stationById = new Map(stations.map((s) => [s.id, s]));
-const routes = maskOffShape(routeList as BusRoute[], shapeData as Shapes, (id) => stationName.get(id), (id) => stationById.get(id));
-const routeById = new Map(routes.map((r) => [r.id, r]));
-const timetable = timetableData as Timetable;
-const index = indexData(stations, routes, shapeData as Shapes);
-// 시간표는 노선 ID + 정류장 순번으로 저장돼 있다. 만들 때와 정류장 수가 다르면(노선만 갱신되고 시간표 갱신 실패) 순번이 어긋나므로 쓰지 않는다.
-const tableOf = (r: BusRoute | undefined) => { const e = r && timetable[r.id]; return e && e.n === r.stops.length ? e : undefined; };
-// 탑승 시간: 시간표의 정류장 간 소요, 없으면 정류장 수 × 평균 소요(정류장이 드문 노선은 거리로)
-const rideMin: RideMin = (r, i, j) => {
-  const e = tableOf(r);
-  const m = e ? offsetAt(e.p, j) - offsetAt(e.p, i) : 0;
-  return Math.round(m >= 1 ? m : roughRide(index, r, i, j)); // 1분 미만은 시간표 보간 오차로 보고 어림값
-};
-// 걷는 길(OpenStreetMap). 없으면 직선 × 배율로 계산한다.
-let walker: Walker | undefined;
-try { walker = walkGraph(JSON.parse(readFileSync(join(process.cwd(), 'data', 'walk.json'), 'utf8'))); } catch { walker = undefined; }
 const ID = /^\d{9}$/;
 // 실시간 조회 노선 수. 10개일 때 첫 구간 가지 노선만으로 다 차서 환승 구간은 늘 시간표였다 (공항→중문 39개 후보, 2026-11-03)
 const MAX_ROUTES = 16;
@@ -42,18 +20,20 @@ const CONCURRENCY = 2;
 const point = (v: string | null) => {
   const [lat, lng] = (v ?? '').split(',').map(Number);
   // 제주 범위 밖이면 직행 후보를 찾지 않는다
-  return lat > 33.1 && lat < 33.6 && lng > 126.08 && lng < 127 ? { lat, lng } : null;
+  return inJeju({ lat, lng }) ? { lat, lng } : null;
 };
 
 // 직전에 성공한 위치 (함수 인스턴스 메모리). 실패했을 때만 STALE_MS 안의 값을 대신 쓴다. 성공하면 늘 새 값이라 옛 위치가 먼저 나오지 않는다.
 const lastOk = new Map<string, { t: number; loc: Awaited<ReturnType<typeof fetchLocation>> }>();
-async function busLocation(r: string, timeoutMs: number, deadline: number) {
+// 같은 노선의 요청은 LOC_TTL_MS(15초) 동안 합친다: 사용자·탭이 여럿이어도 노선당 15초에 한 번만 busopen을 부른다 (캐시를 없앤 뒤 20초 갱신마다 노선당 최대 16번 부르던 것을 줄임, MUS2-152)
+const inflight = new Map<string, { t: number; p: Promise<Awaited<ReturnType<typeof fetchLocation>>> }>();
+const busLocation = (r: string, timeoutMs: number, deadline: number) => coalesced(inflight, r, Date.now(), LOC_TTL_MS, async () => {
   let loc = await fetchLocation(r, timeoutMs);
   // 실패하면 짧게 쉬고 1회 재시도 (남은 시간이 충분할 때만, 이 노선만)
   if (!loc.ok && deadline - Date.now() > 2500) { await new Promise((ok) => setTimeout(ok, 300)); loc = await fetchLocation(r, Math.min(timeoutMs, deadline - Date.now() - 100)); }
   if (loc.ok) lastOk.set(r, { t: Date.now(), loc });
   return loc;
-}
+}, (loc) => loc.ok);
 async function fetchLocation(r: string, timeoutMs: number) {
   try {
     const res = await fetch(`http://busopen.jeju.go.kr/OpenAPI/service/bis/BusLocation?route=${r}`, {
@@ -70,6 +50,9 @@ async function fetchLocation(r: string, timeoutMs: number) {
 }
 
 export async function GET(req: Request) {
+  const blocked = guardRequest(req, 'plan', PLAN_RATE_PER_MIN);
+  if (blocked) return blocked;
+  const { stationName, stationById, routeById, index, tableOf, rideMin } = getPlanData();
   const p = new URL(req.url).searchParams;
   // q = ODsay 경로의 첫 버스, later = 환승 버스 (환승 버스는 시간표만 쓰므로 실시간 조회는 안 함)
   const parse = (v: string | null) => (v ?? '').split(',').map((x) => x.split(':'))
@@ -77,6 +60,7 @@ export async function GET(req: Request) {
   // pin = 화면에서 따라가는 경로의 구간들: 실시간 칸에 가장 먼저 넣는다 (타고 가는 중에도 환승 버스를 실시간으로)
   const pairs = parse(p.get('q')), laterPairs = parse(p.get('later')), pinPairs = parse(p.get('pin'));
   const from = point(p.get('from')), to = point(p.get('to'));
+  const walker = from || to ? getWalker() : undefined; // 걷는 길 7.7MB: 출발·도착 좌표가 있는 요청에서만 읽는다 (지도 선만 받는 요청은 안 읽음)
   // 평일 퇴근길엔 시간표 소요보다 오래 걸린다 (실측 배율, lib/config.ts RUSH_RIDE). 실시간 대기의 정류장당 소요도 여기서 나와 같이 늘어난다
   const rf = rideFactor(new Date());
   const trips = from && to ? findTrips(from, to, index, rf === 1 ? rideMin : (r, i, j) => Math.round(rideMin(r, i, j) * rf), 20, walker) : [];
@@ -212,7 +196,7 @@ export async function GET(req: Request) {
   // ODsay 경로의 첫·마지막 걷기도 우리 걷는 길로 잰다 (ODsay 도보 시간이 실제보다 짧은 곳이 있음: 제주대학교입구 → 캠퍼스 안)
   const walkMins = (pt: { lat: number; lng: number } | null, ids: string | null) => {
     const res: Record<string, number> = {};
-    const tree = pt ? walker?.tree(pt, 3000) : null;
+    const tree = pt ? walker?.tree(pt, WALK_TREE_M) : null;
     for (const id of tree ? (ids ?? '').split(',').slice(0, 20) : []) {
       const s = ID.test(id) ? index.byId.get(id) : undefined;
       const r = s && tree!.to(s);
@@ -223,8 +207,8 @@ export async function GET(req: Request) {
   const walkFrom = walkMins(from, p.get('wf')), walkTo = walkMins(to, p.get('wt'));
   // 버스 없이 바로 걸어가는 시간 (3km 안만). 버스보다 빠르면 화면이 "걸어가세요"를 먼저 보여준다
   let walkAll: number | undefined, walkAllPath: { lat: number; lng: number }[] | undefined;
-  if (from && to && !p.get('lite') && distM(from, to) < 3000) {
-    const r = walker?.tree(from, 3000)?.to(to);
+  if (from && to && !p.get('lite') && distM(from, to) < WALK_TREE_M) {
+    const r = walker?.tree(from, WALK_TREE_M)?.to(to);
     const ok = r && isFinite(r.m);
     walkAll = Math.round((ok ? r.m : distM(from, to) * WALK_DETOUR) / WALK_M_PER_MIN);
     walkAllPath = ok ? r.path : [from, to];

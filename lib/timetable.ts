@@ -241,6 +241,8 @@ const HOLIDAYS = new Set([
   '2027-01-01', '2027-02-08', '2027-02-09', '2027-03-01', '2027-05-05', '2027-05-13', '2027-08-16', '2027-09-14', '2027-09-15',
   '2027-07-19', '2027-09-16', '2027-10-04', '2027-10-11', '2027-12-27',
 ]);
+// 공휴일 목록이 덮는 마지막 해 (lib/timetable.test.ts가 지금 날짜와 비교해, 목록이 낡으면 npm test를 실패시킨다)
+export const HOLIDAY_LAST_YEAR = Math.max(...[...HOLIDAYS].map((d) => Number(d.slice(0, 4))));
 // KST 기준 요일 비트 (plusDays = 내일이면 1)
 export function kstDay(now: Date, plusDays = 0): number {
   const d = new Date(now.getTime() + plusDays * 86_400_000);

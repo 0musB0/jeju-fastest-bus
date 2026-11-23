@@ -21,8 +21,13 @@
 새 세션은 이 지도로 구조를 먼저 파악하고, 고칠 파일만 연다. **파일을 더하거나 빼거나 역할을 바꾸면 같은 커밋에서 이 지도도 고친다.**
 
 ```
-app/page.tsx          화면 전체(클라이언트). 경로 카드 = 시간 막대(Bar) + 세로 줄(고른 카드만 전부), "이 경로로 갈게요" 따라가기(localStorage). 장소 검색 → ODsay 직접 호출 → /api/plan → applyRealtime → arrivalMin → 정렬·표시, 20초마다 lite 재계산. 즐겨찾기(localStorage). 결과 아래 애드센스 1자리(NEXT_PUBLIC_ADSENSE_CLIENT·_SLOT 둘 다 있을 때만)
-app/RouteMap.tsx      결과 지도(카카오맵 JS SDK), 노선 선 그리기. RouteLine = 노선 페이지의 노선 한 개 선(펼칠 때 그림)
+app/page.tsx          화면 조립(클라이언트, 약 75줄): 출발·도착 칸 + 지도 + 경로 카드 목록 + 안내 글 + 결과 아래 애드센스 1자리(NEXT_PUBLIC_ADSENSE_CLIENT·_SLOT 둘 다 있을 때만). 상태·계산은 아래 hook에 있음
+app/usePlanner.ts     길찾기 상태와 계산 전부: 장소 검색 → ODsay 직접 호출 → /api/plan → rankRoutes → 표시, 20초(REFRESH_MS)마다 lite 재계산, "이 경로로 갈게요" 따라가기·탄 뒤 고정·저장 복원(localStorage)
+app/useMyLocation.ts  GPS 위치·나침반 방향 (지도가 뜬 동안만)
+app/PlacePicker.tsx   출발·도착 칸: 장소 검색, 현재 위치, 지도에서 고르기, 즐겨찾기(localStorage, 도착지만)
+app/RouteCard.tsx     경로 카드 하나 = 시간 막대(Bar) + 세로 줄(고른 카드만 전부) + 따라가기 버튼 (그리기만)
+app/saved.ts          브라우저 저장소 읽기(loadTrip·loadPinned), 값 검증은 lib/storage.ts
+app/RouteMap.tsx      결과 지도(카카오맵 JS SDK, 받기 10초 제한·2회 재시도·실패 시 '다시 시도' 버튼), 노선 선 그리기. RouteLine = 노선 페이지의 노선 한 개 선(펼칠 때 그림)
 app/layout.tsx        폰트(Jua)·메타·상단 메뉴·하단 링크. icon.svg, apple-icon.png, opengraph-image.* = 아이콘·링크 미리보기
 app/ads.txt/route.ts  애드센스 ads.txt (게시자 ID 없으면 404)
 app/privacy/page.tsx  개인정보처리방침 (애드센스 요건)
@@ -34,13 +39,20 @@ app/guide/[slug]      안내 글 본문(요금·종류·타는 법) + 공항→�
 app/sitemap.ts, robots.ts  검색엔진용
 lib/guides.ts         안내 글 목록(GUIDES), airportRides(공항 → 목적지 직행 노선·소요·첫차·막차)
 app/globals.css       디자인(모래·현무암·귤색)
-app/api/search        카카오 키워드 검색 프록시(제주 rect 고정)
-app/api/plan          서버 핵심. data/*.json을 import해 findTrips(우리 경로 후보) + 노선별 busopen BusLocation(실시간) + 시간표 도착 시각 + 지도 선(paths)을 돌려줌
+app/api/search        카카오 키워드 검색 프록시(제주 rect 고정, 좌표 검증). route.test.ts = 이 라우트 테스트
+app/api/plan          서버 핵심. lib/data.ts로 data/*.json을 처음 필요할 때 읽어 findTrips(우리 경로 후보) + 노선별 busopen BusLocation(실시간) + 시간표 도착 시각 + 지도 선(paths)을 돌려줌. route.test.ts = 이 라우트 테스트(busopen은 가짜 응답)
 lib/config.ts         조절값 상수 전부
+lib/data.ts           /api/plan용 data/*.json 지연 로딩(getPlanData: 정류장·노선·시간표·모양 약 3.8MB, getWalker: 걷는 길 7.7MB). 막힌 요청·지도 선만 받는 요청은 안 읽음
+lib/guard.ts          API 보호: Origin 검증·쿼리 길이 상한(414)·IP별 분당 상한(429, 인스턴스 메모리). /api/plan·/api/search 맨 앞에서 호출
+lib/storage.ts        localStorage·sessionStorage 값 검증(즐겨찾기·탭 저장·따라가기). 깨진 값은 없는 것으로
+lib/walk.ts           걷는 길 그래프(data/walk.json, OpenStreetMap) 다익스트라: 출발·도착 걷기 시간·선
+next.config.ts        보안 헤더(CSP Report-Only 포함), /api/plan 배포에 data/*.json 포함
 lib/direct.ts         정류장·노선 인덱스, 거리·걷기, findTrips(직행·환승 2번), legPath
 lib/eta.ts            arrivalMin: 후보 1개의 도착 시각(순수 함수), kstClock 표시
 lib/follow.ts         따라가기 순수 함수: walking(누른 뒤 걸은 만큼), passed(버스 지나감 판정), riding(탄 버스 안·환승 정류장에서 남은 경로 다시 계산), shift, searchOrigin(검색 출발지: 탑승 뒤 내 위치, "현재 위치" 출발은 갱신 때마다 GPS 다시 읽기), pace(버스 속도 배율)
-lib/realtime.ts       BusLocation XML 파싱, 남은 정류장 수, applyRealtime(대기 반영), tripsToRoutes(우리 경로 → 화면용 Route)
+lib/realtime.ts       BusLocation XML 파싱(깨진 항목 버림), coalesced(같은 노선 요청 합치기), 남은 정류장 수, applyRealtime(대기 반영), tripsToRoutes(우리 경로 → 화면용 Route)
+lib/rank.ts           rankRoutes: 후보(ODsay+우리 경로) → 실시간 반영·도착 순 정렬·끝난 경로·돌아가는 경로 거르기 (순수 함수)
+lib/format.ts         화면 문구 순수 함수(dur·clock12·routeKey·busNumbers·splitStop)
 lib/odsay.ts          ODsay 응답 파싱(JEB 접두어 제거), 요금 계산
 lib/timetable.ts      시간표 표 파싱·이름 맞추기·Entry 생성, arrivals/firstAt, kstDay(공휴일 목록)·kstMinutes
 lib/*.test.ts         같은 이름 파일의 테스트 (npm test)
@@ -48,11 +60,14 @@ data/stations.json    정류장 {id,name,lat,lng,dir}      ← scripts/fetch-dat
 data/routes.json      노선 {id,no,to,stops[]}          ← scripts/fetch-data.mjs
 data/schedules.json   사이트 시간표 원본 표(탭 이름 label에 평일/휴일)             ← scripts/fetch-schedules.mjs (schedules.yml, 매달 2일)
 data/timetable.json   노선ID → {p,t,m,n} 정류장 순번 기준 ← scripts/build-timetable.mjs
+data/walk.json        OSM 걷는 길(점·간선)           ← scripts/fetch-walk.mjs (walk.yml, 석 달마다)
 data/shapes.json      노선ID → {p 좌표, s 정류장 선분}   ← scripts/fetch-shapes.mjs
+scripts/check-data.mjs  데이터 워크플로의 커밋 전 검사: 최소 건수·직전 커밋 대비 20% 넘는 감소면 실패 (check-data.test.mjs)
+scripts/ridetime.mjs   시간대별 실제÷시간표 탑승 시간 측정 (config RUSH_RIDE 근거)
 scripts/accuracy.mjs  배포된 /api/plan으로 대기 예측 정확도 측정 (accuracy.yml, 수동)
 ```
 
-자주 고치는 곳: 조절값은 `lib/config.ts`, 대기·도착 계산은 `lib/eta.ts`·`lib/realtime.ts`, 경로 후보는 `lib/direct.ts`, 화면 문구·배치는 `app/page.tsx`. data/*.json은 크니 통째로 열지 말고 `head -c`로 본다.
+자주 고치는 곳: 조절값은 `lib/config.ts`, 대기·도착 계산은 `lib/eta.ts`·`lib/realtime.ts`, 경로 후보는 `lib/direct.ts`, 화면 문구·배치는 `app/page.tsx`·`app/RouteCard.tsx`·`app/PlacePicker.tsx`, 순위·거르기는 `lib/rank.ts`, 따라가기·갱신 흐름은 `app/usePlanner.ts`. data/*.json은 크니 통째로 열지 말고 `head -c`로 본다.
 
 ## 데이터 출처와 규칙
 
@@ -64,7 +79,7 @@ scripts/accuracy.mjs  배포된 /api/plan으로 대기 예측 정확도 측정 (
 | 시간표 | bus.jeju.go.kr `/data/schedule/getScheduleInfo`·`getScheduleTableInfo` (robots.txt·약관 없음 확인, 사용자 승인 2026-10-31) | `scripts/fetch-schedules.mjs` → `data/schedules.json`, `scripts/build-timetable.mjs`가 주요 정류장 이름을 BIS 정류장과 맞춰 `data/timetable.json`(노선 ID별)으로. 매달, 요청 사이 0.3초 |
 | 노선 모양(지도 선) | bus.jeju.go.kr `/data/search/getLinkInfoByLineId` (POST, 시간표와 같은 사이트·승인) | `scripts/fetch-shapes.mjs` → `data/shapes.json`, 시간표 워크플로에서 매달. 정류장은 선분 번호로 맞춤(`--reindex`로 다시 계산) |
 | 걷는 길 | OpenStreetMap (Overpass API, User-Agent 필요) | `scripts/fetch-walk.mjs` → `data/walk.json`, `walk.yml` 석 달마다. 서버에서 읽기만 함(외부 호출 없음, 한도 없음). 화면 하단에 OSM 출처 표기 |
-| 실시간 위치 | 제주 버스정보 busopen `BusLocation?route=` (키 없음, 1단계에서 선택) | 노선 단위 조회, 검색 1회당 최대 16개 노선(남은 시간이 4초보다 짧으면 남은 노선은 건너뜀, 상위 6개 후보의 환승 구간까지 먼저). 대기 = 남은 정류장 수 × 구간 정류장당 소요. `BusArrives`(도착 예정)는 값이 2022·2025년에 멈춰 있어 쓰지 않는다. 서버가 가끔 3초를 넘긴다 |
+| 실시간 위치 | 제주 버스정보 busopen `BusLocation?route=` (키 없음, 1단계에서 선택) | 노선 단위 조회, 검색 1회당 최대 16개 노선, 같은 노선은 함수 메모리에서 15초 합침(남은 시간이 4초보다 짧으면 남은 노선은 건너뜀, 상위 6개 후보의 환승 구간까지 먼저). 대기 = 남은 정류장 수 × 구간 정류장당 소요. `BusArrives`(도착 예정)는 값이 2022·2025년에 멈춰 있어 쓰지 않는다. 서버가 가끔 3초를 넘긴다 |
 
 - API 키는 Vercel 환경 변수에만 둔다. 커밋, 로그, 클라이언트 번들에 넣지 않는다 (도메인을 제한한 브라우저 키 `NEXT_PUBLIC_ODSAY_KEY`, `NEXT_PUBLIC_KAKAO_JS_KEY`만 예외).
 - 공공 API는 오류를 HTTP 200에 담아 보낼 수 있다. 결과 코드를 확인하고, 오류 응답은 캐시하지 않는다.
@@ -96,9 +111,11 @@ scripts/accuracy.mjs  배포된 /api/plan으로 대기 예측 정확도 측정 (
 
 ## Vercel 설정
 
+- 보안 헤더는 `next.config.ts`: 프레임·base·object·form 제한은 적용 중, 스크립트·연결·이미지 출처 CSP는 Report-Only(카카오맵·애드센스를 배포 화면에서 확인한 뒤 `Content-Security-Policy`로 올린다, 2026-11-23).
+
 - 함수 지역은 서울로 고정한다: `vercel.json`에 `"regions": ["icn1"]`.
 - 실시간 조회는 2개씩 나눠 병렬로 보내고(제주 서버는 5개를 동시에 보내면 모두 3초를 넘김, 실측), 각 요청에 `AbortSignal.timeout`을 둔다(요청당 최대 6초, 전체 8.5초 안. 남은 시간이 4초보다 짧으면 새 배치를 보내지 않는다 (짧은 제한 시간은 3초대 응답을 TimeoutError로 실패시켰다, 2026-11-11). Vercel→busopen은 3초를 늘 넘겨 6회 모두 실패, 2026-11-11).
-- 실시간 응답(버스 위치)은 `fetch(url, { cache: 'no-store' })`로 캐시하지 않는다. `revalidate`는 만료된 값을 먼저 주므로 옛 위치가 첫 화면에 나온다(2026-11-11). 함수 메모리에는 직전 성공 위치만 두고, 조회가 실패했을 때만 60초 안의 값을 대신 쓴다(`fallbackLoc`, 화면에 "N초 전 값"). 성공하면 늘 새 값.
+- 실시간 응답(버스 위치)은 `fetch(url, { cache: 'no-store' })`로 캐시하지 않는다. `revalidate`는 만료된 값을 먼저 주므로 옛 위치가 첫 화면에 나온다(2026-11-11). 같은 노선 요청은 함수 메모리에서 15초(`LOC_TTL_MS`) 동안 합친다(`coalesced`: 진행 중이거나 15초 안에 성공한 결과를 나눠 씀, 실패는 남기지 않음. 화면 갱신 20초보다 짧아 한 사용자의 첫 화면이 옛 위치가 되진 않는다, MUS2-152). 함수 메모리에는 직전 성공 위치도 두고, 조회가 실패했을 때만 60초 안의 값을 대신 쓴다(`fallbackLoc`, 화면에 "N초 전 값"). 성공하면 늘 새 값.
 - Hobby 요금제는 비상업 용도 전용이다. 광고나 유료화를 하면 Pro로 옮긴다. 애드센스 코드는 들어 있지만 `NEXT_PUBLIC_ADSENSE_CLIENT`가 없으면 꺼져 있다(2026-11-01). 이 값을 넣기 전에 Pro 전환을 먼저 확인한다.
 - API 확인은 로컬이 아니라 배포된 환경에서 한다 (IP·지역 문제는 로컬에서 드러나지 않는다).
 
@@ -114,5 +131,5 @@ scripts/accuracy.mjs  배포된 /api/plan으로 대기 예측 정확도 측정 (
 
 1. 빈 프로젝트를 Vercel(icn1)에 배포하고 API를 확인한다: ODsay Web 키, 실시간 후보 3곳 비교, 실시간 값의 단위와 몇 대까지 주는지, 시간표 데이터 확보 여부, 일일 한도와 약관.
 2. 계산 함수와 테스트, 최소 화면 (검색, 결과 3개, 오류 문구).
-3. 실시간 반영, 직행 후보, 정류장 방향 대응표, 공유 캐시.
+3. 실시간 반영, 직행 후보, 정류장 방향 대응표, 공유 캐시(→ 쓰지 않음: 노선별 위치는 함수 메모리에서 15초 합침, 2026-11-23).
 4. 출발·도착 5쌍으로 실제 도착 시각과 비교해 정확도를 확인한다. 지도는 그다음.

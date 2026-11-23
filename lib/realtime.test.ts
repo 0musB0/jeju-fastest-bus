@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseBusLocation, minsAway, stopsAway, fallbackLoc, batchTimeout } from './realtime.ts';
+import { parseBusLocation, minsAway, stopsAway, fallbackLoc, batchTimeout, coalesced } from './realtime.ts';
 
 const item = (id: string, ord: number, plate = 'null') => `<item><plateNo>${plate}</plateNo><stationId>${id}</stationId><stationOrd>${ord}</stationOrd></item>`;
 const xml = `<response><header><resultCode>00</resultCode></header><body><items>${[
@@ -124,6 +124,37 @@ test('노선별 격리: 한 구간의 조회가 실패해도 다른 구간은 �
   assert.equal(a.nextBusesMin, undefined); // 실패 구간: 실시간 없음 → 시간표
   assert.deepEqual(a.timetableMin, [9]);
   assert.deepEqual(b.nextBusesMin, [10]); // 성공 구간: 실시간 유지 (4정류장 × 2.5분)
+});
+
+test('깨진 항목(정류장 ID 없음, 순번이 숫자 아님)은 버린다', () => {
+  const bad = `<response><header><resultCode>00</resultCode></header><body><items>${[
+    item('A', 1), '<item><plateNo>null</plateNo><stationId>B</stationId><stationOrd>x</stationOrd></item>', '<item><plateNo>null</plateNo><stationOrd>3</stationOrd></item>',
+  ].join('')}</items></body></response>`;
+  const r = parseBusLocation(bad);
+  assert.ok(r.ok);
+  assert.deepEqual(r.stops.map((s) => s.stationId), ['A']);
+});
+
+test('coalesced: 같은 키는 한 번만 부르고, 실패·만료 뒤에는 다시 부른다', async () => {
+  const cache = new Map();
+  let calls = 0, ok = true;
+  const run = async () => { calls++; return ok; };
+  const go = (now: number) => coalesced(cache, 'r', now, 1000, run, (v) => v);
+  await Promise.all([go(0), go(10), go(20)]);
+  assert.equal(calls, 1); // 동시 요청 합침
+  await go(500);
+  assert.equal(calls, 1); // ttl 안 재사용
+  await go(1500);
+  assert.equal(calls, 2); // 만료
+  ok = false;
+  await go(3000);
+  assert.equal(calls, 3);
+  await new Promise((r) => setTimeout(r)); // 실패는 지워진다
+  await go(3001);
+  assert.equal(calls, 4);
+  const boom = () => coalesced(cache, 'x', 0, 1000, () => Promise.reject(new Error('e')), () => true);
+  await assert.rejects(boom());
+  await assert.rejects(boom()); // 예외도 남지 않음
 });
 
 test('종점 추정 연결: schedules.estMin이 첫 구간 estMin으로 들어가고 추정 시각이 "추정"으로 계산된다', async () => {
