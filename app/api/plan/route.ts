@@ -117,7 +117,8 @@ export async function GET(req: Request) {
     results[`${r}:${s}`] = !loc.ok ? { error: loc.reason } : away ?? { error: '이 노선에 없는 정류장' };
     const e = tableOf(routeById.get(r));
     if (loc.ok && away && e) {
-      const m = minsAway(parked ? loc.stops.map((x, k) => (k === 0 ? { ...x, bus: false } : x)) : loc.stops, s, (o) => offsetAt(e.p, o) * rf);
+      // busopen stationOrd는 1-based, timetable.json(e.p)은 0-based 인덱스
+      const m = minsAway(parked ? loc.stops.map((x, k) => (k === 0 ? { ...x, bus: false } : x)) : loc.stops, s, (o) => offsetAt(e.p, o - 1) * rf);
       if (m) rtMin[`${r}:${s}`] = m.map((x) => Math.round(x * 10) / 10);
     }
   }

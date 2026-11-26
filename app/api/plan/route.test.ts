@@ -81,3 +81,32 @@ test('busopen이 실패하면 이유를 담고, 실패는 합치기 캐시에 �
   assert.ok(Array.isArray(j2.results[key]));
   assert.ok(busopenCalls > 0);
 });
+
+test('rtMin: busopen 1-based stationOrd를 timetable 0-based 인덱스로 맞춰 계산한다', async () => {
+  const { offsetAt, rideFactor } = await import('../../../lib/timetable.ts');
+  const tt = data<Record<string, { p: number[] }>>('timetable.json');
+  const rf = rideFactor(new Date());
+  const round1 = (x: number) => Math.round(x * rf * 10) / 10;
+  let target!: typeof route, busIdx = 1, stopIdx = 5;
+  outer: for (const r of [...allRoutes].reverse()) {
+    const e = tt[r.id];
+    if (!e || r.id === route.id || r.stops.length < 8 || e.p.length < 6 || r.stops.some((s) => route.stops.includes(s))) continue;
+    for (let b = 1; b < r.stops.length - 5; b++) {
+      const s = b + 4;
+      if (round1(offsetAt(e.p, s) - offsetAt(e.p, b)) !== round1(offsetAt(e.p, s + 1) - offsetAt(e.p, b + 1))) {
+        target = r; busIdx = b; stopIdx = s; break outer;
+      }
+    }
+  }
+  assert.ok(target);
+  globalThis.fetch = (async () => {
+    const items = target.stops.map((id, i) => `<item><plateNo>${i === busIdx ? '제주79아1234' : 'null'}</plateNo><stationId>${id}</stationId><stationOrd>${i + 1}</stationOrd></item>`).join('');
+    return new Response(`<response><header><resultCode>00</resultCode></header><body><items>${items}</items></body></response>`);
+  }) as typeof fetch;
+  const key = `${target.id}:${target.stops[stopIdx]}`;
+  const j = await (await call(`q=${key}`)).json();
+  const expected = round1(offsetAt(tt[target.id].p, stopIdx) - offsetAt(tt[target.id].p, busIdx));
+  const buggy = round1(offsetAt(tt[target.id].p, stopIdx + 1) - offsetAt(tt[target.id].p, busIdx + 1));
+  assert.notEqual(expected, buggy);
+  assert.deepEqual(j.rtMin[key], [expected]);
+});
